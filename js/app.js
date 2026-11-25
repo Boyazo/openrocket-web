@@ -104,39 +104,40 @@ document.addEventListener("DOMContentLoaded", () => {
   // 1. TAB SWITCHING
   // -------------------------------------------------------------
   function switchTab(target) {
-    [viewRocketDesign, viewMotorsConfig, viewFlightSims].forEach(v => v.classList.add("hidden"));
+    [viewRocketDesign, viewMotorsConfig, viewFlightSims].forEach(v => v?.classList.add("hidden"));
     [tabRocketDesign, tabMotorsConfig, tabFlightSims].forEach(t => {
-      t.className = "px-4 h-full border-t border-l border-r border-transparent hover:bg-slate-100 font-medium text-slate-600 rounded-t-sm";
+      if (t) t.className = "px-4 h-full border-t border-l border-r border-transparent hover:bg-slate-100 font-medium text-slate-600 rounded-t-sm";
     });
 
     if (target === "design") {
-      viewRocketDesign.classList.remove("hidden");
-      tabRocketDesign.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
+      viewRocketDesign?.classList.remove("hidden");
+      if (tabRocketDesign) tabRocketDesign.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
       setTimeout(() => {
         blueprint.resizeCanvases();
         blueprint.draw();
       }, 50);
     } else if (target === "motors") {
-      viewMotorsConfig.classList.remove("hidden");
-      tabMotorsConfig.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
+      viewMotorsConfig?.classList.remove("hidden");
+      if (tabMotorsConfig) tabMotorsConfig.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
     } else if (target === "sims") {
-      viewFlightSims.classList.remove("hidden");
-      tabFlightSims.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
+      viewFlightSims?.classList.remove("hidden");
+      if (tabFlightSims) tabFlightSims.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
       flightVisualizer.buildRocketModel(activeRocket);
       setTimeout(() => flightVisualizer.onWindowResize(), 50);
       runSimulation();
     }
   }
 
-  tabRocketDesign.addEventListener("click", () => switchTab("design"));
-  tabMotorsConfig.addEventListener("click", () => switchTab("motors"));
-  tabFlightSims.addEventListener("click", () => switchTab("sims"));
-  btnTestFlightTop.addEventListener("click", () => switchTab("sims"));
+  tabRocketDesign?.addEventListener("click", () => switchTab("design"));
+  tabMotorsConfig?.addEventListener("click", () => switchTab("motors"));
+  tabFlightSims?.addEventListener("click", () => switchTab("sims"));
+  btnTestFlightTop?.addEventListener("click", () => switchTab("sims"));
 
   // -------------------------------------------------------------
   // 2. OPENROCKET COMPONENT TREE RENDERING
   // -------------------------------------------------------------
   function renderTree() {
+    if (!treeContainer) return;
     treeContainer.innerHTML = "";
 
     const root = document.createElement("div");
@@ -205,7 +206,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
     updateReadouts();
   }
 
@@ -222,10 +223,10 @@ document.addEventListener("DOMContentLoaded", () => {
     editModal.classList.remove("hidden");
   }
 
-  modalClose.addEventListener("click", () => editModal.classList.add("hidden"));
-  modalBtnCancel.addEventListener("click", () => editModal.classList.add("hidden"));
+  modalClose?.addEventListener("click", () => editModal.classList.add("hidden"));
+  modalBtnCancel?.addEventListener("click", () => editModal.classList.add("hidden"));
 
-  modalBtnSave.addEventListener("click", () => {
+  modalBtnSave?.addEventListener("click", () => {
     if (!selectedComponent) return;
     selectedComponent.name = modalCompName.value;
     if (selectedComponent.length !== undefined) {
@@ -239,16 +240,16 @@ document.addEventListener("DOMContentLoaded", () => {
     editModal.classList.add("hidden");
     recalcStability();
     renderTree();
-    blueprint.draw();
+    blueprint.setRocket(activeRocket);
     flightVisualizer.buildRocketModel(activeRocket);
   });
 
-  btnTreeEdit.addEventListener("click", () => {
+  btnTreeEdit?.addEventListener("click", () => {
     if (selectedComponent) openEditModal(selectedComponent);
   });
 
   // RECURSIVE DELETE (Deletes root components OR child items inside bodytubes)
-  btnTreeDelete.addEventListener("click", () => {
+  btnTreeDelete?.addEventListener("click", () => {
     if (!selectedComponent) return;
 
     // Check top level
@@ -272,14 +273,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recalcStability();
     renderTree();
-    blueprint.draw();
+    blueprint.setRocket(activeRocket);
     flightVisualizer.buildRocketModel(activeRocket);
   });
 
   // -------------------------------------------------------------
   // 4. ADD COMPONENTS TOOLBAR
   // -------------------------------------------------------------
-  toolAddNose.addEventListener("click", () => {
+  toolAddNose?.addEventListener("click", () => {
     activeRocket.components.unshift({
       id: "nose-" + Date.now(),
       type: "nosecone",
@@ -291,11 +292,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     recalcStability();
     renderTree();
-    blueprint.draw();
+    blueprint.setRocket(activeRocket);
     flightVisualizer.buildRocketModel(activeRocket);
   });
 
-  toolAddBodytube.addEventListener("click", () => {
+  toolAddBodytube?.addEventListener("click", () => {
     activeRocket.components.push({
       id: "tube-" + Date.now(),
       type: "bodytube",
@@ -307,11 +308,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     recalcStability();
     renderTree();
-    blueprint.draw();
+    blueprint.setRocket(activeRocket);
     flightVisualizer.buildRocketModel(activeRocket);
   });
 
-  toolAddFreeformFins.addEventListener("click", () => {
+  toolAddFreeformFins?.addEventListener("click", () => {
     const targetTube = (selectedComponent && selectedComponent.type === "bodytube")
       ? selectedComponent
       : activeRocket.components.filter(c => c.type === "bodytube").pop();
@@ -330,12 +331,12 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       recalcStability();
       renderTree();
-      blueprint.draw();
+      blueprint.setRocket(activeRocket);
       flightVisualizer.buildRocketModel(activeRocket);
     }
   });
 
-  toolAddParachute.addEventListener("click", () => {
+  toolAddParachute?.addEventListener("click", () => {
     const targetTube = (selectedComponent && selectedComponent.type === "bodytube")
       ? selectedComponent
       : activeRocket.components.find(c => c.type === "bodytube");
@@ -350,7 +351,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       recalcStability();
       renderTree();
-      blueprint.draw();
+      blueprint.setRocket(activeRocket);
       flightVisualizer.buildRocketModel(activeRocket);
     }
   });
@@ -358,31 +359,32 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------
   // 5. BLUEPRINT VIEWPORT & RECALCULATION
   // -------------------------------------------------------------
-  btnZoomIn.addEventListener("click", () => {
+  btnZoomIn?.addEventListener("click", () => {
     blueprint.zoom = Math.min(2.0, blueprint.zoom + 0.15);
-    zoomLevelText.textContent = `${Math.round(blueprint.zoom * 100)}%`;
+    if (zoomLevelText) zoomLevelText.textContent = `${Math.round(blueprint.zoom * 100)}%`;
     blueprint.draw();
   });
 
-  btnZoomOut.addEventListener("click", () => {
+  btnZoomOut?.addEventListener("click", () => {
     blueprint.zoom = Math.max(0.4, blueprint.zoom - 0.15);
-    zoomLevelText.textContent = `${Math.round(blueprint.zoom * 100)}%`;
+    if (zoomLevelText) zoomLevelText.textContent = `${Math.round(blueprint.zoom * 100)}%`;
     blueprint.draw();
   });
 
-  checkShowCgCp.addEventListener("change", () => {
+  checkShowCgCp?.addEventListener("change", () => {
     blueprint.showCgCp = checkShowCgCp.checked;
     blueprint.draw();
   });
 
-  checkCallipers.addEventListener("change", () => {
+  checkCallipers?.addEventListener("change", () => {
     blueprint.showCallipers = checkCallipers.checked;
     blueprint.draw();
   });
 
-  configMotorSelect.addEventListener("change", () => {
+  configMotorSelect?.addEventListener("change", () => {
     activeRocket.motor.designation = configMotorSelect.value;
-    document.getElementById("info-flight-config").textContent = `Flight configuration: [${configMotorSelect.value}-10]`;
+    const infoFlight = document.getElementById("info-flight-config");
+    if (infoFlight) infoFlight.textContent = `Flight configuration: [${configMotorSelect.value}-10]`;
     blueprint.draw();
     runSimulation();
   });
@@ -404,12 +406,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const cpCm = (activeRocket.cp || 1.21) * 100;
     const stabCal = (((activeRocket.cp || 1.21) - (activeRocket.cg || 1.02)) / 0.102).toFixed(2);
 
-    document.getElementById("active-rocket-title").textContent = `${activeRocket.name} (${activeRocket.stage || "Sustainer"})`;
-    document.getElementById("info-rocket-title").textContent = `Rocket: ${activeRocket.name}`;
-    document.getElementById("info-len").textContent = `${Math.round(len * 100)} cm`;
-    document.getElementById("info-cg").textContent = `${Math.round(cgCm)} cm`;
-    document.getElementById("info-cp").textContent = `${Math.round(cpCm)} cm`;
-    document.getElementById("info-stability-cal").textContent = `${stabCal} cal`;
+    const elTitle = document.getElementById("active-rocket-title");
+    const elInfoTitle = document.getElementById("info-rocket-title");
+    const elLen = document.getElementById("info-len");
+    const elCg = document.getElementById("info-cg");
+    const elCp = document.getElementById("info-cp");
+    const elStab = document.getElementById("info-stability-cal");
+
+    if (elTitle) elTitle.textContent = `${activeRocket.name} (${activeRocket.stage || "Sustainer"})`;
+    if (elInfoTitle) elInfoTitle.textContent = `Rocket: ${activeRocket.name}`;
+    if (elLen) elLen.textContent = `${Math.round(len * 100)} cm`;
+    if (elCg) elCg.textContent = `${Math.round(cgCm)} cm`;
+    if (elCp) elCp.textContent = `${Math.round(cpCm)} cm`;
+    if (elStab) elStab.textContent = `${stabCal} cal`;
   }
 
   // -------------------------------------------------------------
@@ -417,22 +426,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------
   function runSimulation() {
     const env = {
-      windSpeed: parseFloat(document.getElementById("weather-wind-speed").value) * 0.44704,
-      windHeading: parseFloat(document.getElementById("weather-wind-dir").value),
-      temperature: (parseFloat(document.getElementById("weather-temp").value) - 32) * (5/9) + 273.15,
-      pressure: parseFloat(document.getElementById("weather-pressure").value) * 100,
-      railLength: parseFloat(document.getElementById("rail-length").value),
-      railAngle: parseFloat(document.getElementById("rail-angle").value),
+      windSpeed: (parseFloat(document.getElementById("weather-wind-speed")?.value) || 6.5) * 0.44704,
+      windHeading: parseFloat(document.getElementById("weather-wind-dir")?.value) || 240,
+      temperature: ((parseFloat(document.getElementById("weather-temp")?.value) || 72) - 32) * (5/9) + 273.15,
+      pressure: (parseFloat(document.getElementById("weather-pressure")?.value) || 1013) * 100,
+      railLength: parseFloat(document.getElementById("rail-length")?.value) || 2.44,
+      railAngle: parseFloat(document.getElementById("rail-angle")?.value) || 0,
       railAzimuth: 0
     };
 
-    activeRocket.motor.designation = configMotorSelect.value;
+    if (configMotorSelect) activeRocket.motor.designation = configMotorSelect.value;
     const simEngine = new RocketSimulation(activeRocket, env);
-    currentSimulation = simEngine.run(10.0);
+    currentSimulation = simEngine.run(activeRocket.motor?.delay || 10.0);
 
     // Update Blueprint Prediction Box
-    document.getElementById("info-apogee").textContent = `${currentSimulation.apogee.meters} m (${currentSimulation.apogee.feet} ft)`;
-    document.getElementById("info-max-vel").textContent = `${currentSimulation.maxVelocity.mps} m/s (Mach ${currentSimulation.maxVelocity.mach})`;
+    const elApogee = document.getElementById("info-apogee");
+    const elMaxVel = document.getElementById("info-max-vel");
+    if (elApogee) elApogee.textContent = `${currentSimulation.apogee.meters} m (${currentSimulation.apogee.feet} ft)`;
+    if (elMaxVel) elMaxVel.textContent = `${currentSimulation.maxVelocity.mps} m/s (Mach ${currentSimulation.maxVelocity.mach})`;
 
     // Load trajectory & rebuild 3D rocket
     flightVisualizer.buildRocketModel(activeRocket);
@@ -444,7 +455,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateAltChart(traj) {
     if (!traj) return;
-    const ctx = document.getElementById("chart-altitude").getContext("2d");
+    const chartEl = document.getElementById("chart-altitude");
+    if (!chartEl) return;
+    const ctx = chartEl.getContext("2d");
     if (!chartAltitude) {
       chartAltitude = new Chart(ctx, {
         type: "line",
@@ -474,7 +487,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSimPlay = document.getElementById("btn-sim-play");
   const btnSimReset = document.getElementById("btn-sim-reset");
 
-  btnSimPlay.addEventListener("click", () => {
+  btnSimPlay?.addEventListener("click", () => {
     if (flightVisualizer.isPlaying) {
       flightVisualizer.pause();
       btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH`;
@@ -482,42 +495,51 @@ document.addEventListener("DOMContentLoaded", () => {
       flightVisualizer.play();
       btnSimPlay.innerHTML = `<i data-lucide="pause" class="w-4 h-4 fill-white"></i> PAUSE`;
     }
-    lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
   });
 
-  btnSimReset.addEventListener("click", () => {
+  btnSimReset?.addEventListener("click", () => {
     flightVisualizer.reset();
-    btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH`;
-    lucide.createIcons();
+    if (btnSimPlay) btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH`;
+    if (window.lucide) lucide.createIcons();
   });
 
   window.addEventListener("telemetry-update", (e) => {
     const p = e.detail;
-    document.getElementById("hud-alt").textContent = p.altitudeFt.toLocaleString();
-    document.getElementById("hud-vel").textContent = p.velocityMph;
-    document.getElementById("hud-acc").textContent = p.accelG;
-    document.getElementById("hud-time").textContent = `T+ ${p.time.toFixed(2)}s`;
+    const elAlt = document.getElementById("hud-alt");
+    const elVel = document.getElementById("hud-vel");
+    const elAcc = document.getElementById("hud-acc");
+    const elTime = document.getElementById("hud-time");
+    if (elAlt) elAlt.textContent = p.altitudeFt.toLocaleString();
+    if (elVel) elVel.textContent = p.velocityMph;
+    if (elAcc) elAcc.textContent = p.accelG;
+    if (elTime) elTime.textContent = `T+ ${p.time.toFixed(2)}s`;
   });
 
-  document.getElementById("cam-pad").addEventListener("click", () => flightVisualizer.setCameraMode("pad"));
-  document.getElementById("cam-follow").addEventListener("click", () => flightVisualizer.setCameraMode("follow"));
-  document.getElementById("cam-rocket").addEventListener("click", () => flightVisualizer.setCameraMode("rocket"));
+  document.getElementById("cam-pad")?.addEventListener("click", () => flightVisualizer.setCameraMode("pad"));
+  document.getElementById("cam-follow")?.addEventListener("click", () => flightVisualizer.setCameraMode("follow"));
+  document.getElementById("cam-rocket")?.addEventListener("click", () => flightVisualizer.setCameraMode("rocket"));
 
-  document.getElementById("btn-fetch-live-weather").addEventListener("click", async () => {
-    const w = await weatherService.fetchLiveWeather(document.getElementById("launch-site-select").value);
-    document.getElementById("weather-wind-speed").value = w.windSpeedMph;
-    document.getElementById("weather-wind-dir").value = w.windDirDeg;
-    document.getElementById("weather-temp").value = w.tempF;
-    document.getElementById("weather-pressure").value = w.pressureMbar;
+  document.getElementById("btn-fetch-live-weather")?.addEventListener("click", async () => {
+    const siteSelect = document.getElementById("launch-site-select");
+    const w = await weatherService.fetchLiveWeather(siteSelect ? siteSelect.value : "friends_lake");
+    const elWs = document.getElementById("weather-wind-speed");
+    const elWd = document.getElementById("weather-wind-dir");
+    const elT = document.getElementById("weather-temp");
+    const elP = document.getElementById("weather-pressure");
+    if (elWs) elWs.value = w.windSpeedMph;
+    if (elWd) elWd.value = w.windDirDeg;
+    if (elT) elT.value = w.tempF;
+    if (elP) elP.value = w.pressureMbar;
     runSimulation();
   });
 
-  document.getElementById("btn-re-simulate").addEventListener("click", () => runSimulation());
+  document.getElementById("btn-re-simulate")?.addEventListener("click", () => runSimulation());
 
   // -------------------------------------------------------------
   // 7. FILE IMPORT / EXPORT (Completely wired!)
   // -------------------------------------------------------------
-  orkFileInput.addEventListener("change", async (e) => {
+  orkFileInput?.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
@@ -537,7 +559,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  btnExportOrk.addEventListener("click", () => {
+  btnExportOrk?.addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(activeRocket, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

@@ -51,7 +51,9 @@ class Rocket3DVisualizer {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.container.appendChild(this.renderer.domElement);
+    if (this.container) {
+      this.container.appendChild(this.renderer.domElement);
+    }
 
     // 3. Controls
     this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
@@ -135,7 +137,7 @@ class Rocket3DVisualizer {
     const flameMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.9 });
     this.flameMesh = new THREE.Mesh(flameGeo, flameMat);
     this.flameMesh.rotation.x = Math.PI;
-    this.flameMesh.position.y = 0.0;
+    this.flameMesh.position.y = 0.35; // base of rocket
     this.flameMesh.visible = false;
     this.exhaustGroup.add(this.flameMesh);
 
@@ -147,7 +149,7 @@ class Rocket3DVisualizer {
 
     for (let i = 0; i < sparkCount; i++) {
       sparkPos[i * 3] = 0;
-      sparkPos[i * 3 + 1] = 0;
+      sparkPos[i * 3 + 1] = 0.35;
       sparkPos[i * 3 + 2] = 0;
       this.sparkVelocities.push({
         vx: (Math.random() - 0.5) * 1.5,
@@ -177,7 +179,7 @@ class Rocket3DVisualizer {
 
     for (let i = 0; i < smokeCount; i++) {
       smokePos[i * 3] = 0;
-      smokePos[i * 3 + 1] = 0;
+      smokePos[i * 3 + 1] = 0.35;
       smokePos[i * 3 + 2] = 0;
       this.smokeVelocities.push({
         vx: (Math.random() - 0.5) * 2.0,
@@ -228,7 +230,7 @@ class Rocket3DVisualizer {
         v.life -= 0.04;
         if (v.life <= 0) {
           positions[i * 3] = (Math.random() - 0.5) * 0.05;
-          positions[i * 3 + 1] = 0;
+          positions[i * 3 + 1] = 0.35;
           positions[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
           v.life = 1.0;
         }
@@ -245,7 +247,7 @@ class Rocket3DVisualizer {
         v.life -= 0.02;
         if (v.life <= 0) {
           smokePos[i * 3] = 0;
-          smokePos[i * 3 + 1] = -0.2;
+          smokePos[i * 3 + 1] = 0.2;
           smokePos[i * 3 + 2] = 0;
           v.life = 1.0;
         }
@@ -259,13 +261,13 @@ class Rocket3DVisualizer {
   }
 
   /**
-   * Robust 3D Rocket Builder:
-   * Handles tubes, nose cones, and fins (either as direct components or nested children)
+   * Build 3D rocket model based on current activeRocket configuration
    */
   buildRocketModel(rocketConfig) {
+    if (!this.scene) return;
     this.activeRocket = rocketConfig;
 
-    // Clear previous geometry except exhaustGroup
+    // Remove old meshes from rocketGroup, keep exhaustGroup
     const toRemove = [];
     this.rocketGroup.children.forEach(c => {
       if (c !== this.exhaustGroup) toRemove.push(c);
@@ -273,10 +275,10 @@ class Rocket3DVisualizer {
     toRemove.forEach(c => this.rocketGroup.remove(c));
 
     const comps = rocketConfig?.components || [];
-    let currentY = 0.35; // pad height offset
+    let currentY = 0.35; // Launch pad height
     const baseOffset = currentY;
 
-    // Find fins either top level or inside any body tube
+    // Find fins (top-level or in any tube's children)
     let foundFins = comps.find(c => c.type === "fins");
     if (!foundFins) {
       comps.forEach(c => {
@@ -299,7 +301,7 @@ class Rocket3DVisualizer {
     motorMesh.position.y = currentY + 0.356 / 2;
     this.rocketGroup.add(motorMesh);
 
-    // 2. Body Tubes (Reverse or straight order - tail to nose)
+    // 2. Body Tubes (stacked from pad up)
     const tubes = comps.filter(c => c.type === "bodytube");
     tubes.forEach(tube => {
       const radius = tube.radius || 0.0508;
@@ -311,7 +313,7 @@ class Rocket3DVisualizer {
       currentY += len;
     });
 
-    // 3. Nose Cone
+    // 3. Nose Cone (at the very top)
     const nose = comps.find(c => c.type === "nosecone");
     if (nose) {
       const nLen = nose.length || 0.503;
@@ -323,7 +325,7 @@ class Rocket3DVisualizer {
       currentY += nLen;
     }
 
-    // 4. Fins (Mount to base of lowest tube)
+    // 4. Fins (mount near the base of the rocket)
     if (foundFins) {
       const count = foundFins.count || 3;
       const span = foundFins.span || 0.125;
@@ -348,13 +350,17 @@ class Rocket3DVisualizer {
       }
     }
 
-    // 5. Parachute
-    const chuteGeo = new THREE.SphereGeometry(0.45, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-    const chuteMat = new THREE.MeshStandardMaterial({ color: 0xf97316, side: THREE.DoubleSide });
+    // 5. Parachute Mesh (hidden until deployment)
+    const chuteGeo = new THREE.SphereGeometry(0.6, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const chuteMat = new THREE.MeshStandardMaterial({ color: 0xef4444, side: THREE.DoubleSide });
     this.parachuteMesh = new THREE.Mesh(chuteGeo, chuteMat);
-    this.parachuteMesh.position.y = currentY + 0.8;
-    this.parachuteMesh.scale.set(0.001, 0.001, 0.001);
+    this.parachuteMesh.position.y = currentY + 0.5;
+    this.parachuteMesh.visible = false;
     this.rocketGroup.add(this.parachuteMesh);
+
+    // Reset rocket position to pad
+    this.rocketGroup.position.set(0, 0, 0);
+    this.rocketGroup.rotation.set(0, 0, 0);
   }
 
   loadSimulationTrajectory(trajData) {
@@ -362,88 +368,92 @@ class Rocket3DVisualizer {
     this.playbackIndex = 0;
   }
 
-  play() { this.isPlaying = true; }
-  pause() { this.isPlaying = false; }
+  play() {
+    this.isPlaying = true;
+  }
+
+  pause() {
+    this.isPlaying = false;
+  }
+
   reset() {
     this.isPlaying = false;
     this.playbackIndex = 0;
-    this.updateFlightFrame(0);
+    this.rocketGroup.position.set(0, 0, 0);
+    this.rocketGroup.rotation.set(0, 0, 0);
+    if (this.parachuteMesh) this.parachuteMesh.visible = false;
+    this.updatePropellant(0);
+    this.updateCamera();
   }
 
-  setSpeed(s) { this.playbackSpeed = s; }
-  setCameraMode(mode) { this.cameraMode = mode; }
-
-  updateFlightFrame(index) {
-    if (!this.trajectoryData || this.trajectoryData.length === 0) return;
-    if (index >= this.trajectoryData.length) {
-      this.isPlaying = false;
-      return;
-    }
-
-    const point = this.trajectoryData[index];
-    this.rocketGroup.position.set(point.posX, point.posY, point.posZ);
-
-    this.updatePropellant(point.thrust, "Dark Matter");
-
-    if (point.phase === "descent" && this.parachuteMesh) {
-      this.parachuteMesh.visible = true;
-      const scale = Math.min(1.0, this.parachuteMesh.scale.x + 0.1);
-      this.parachuteMesh.scale.set(scale, scale, scale);
-      this.rocketGroup.rotation.z = Math.sin(point.time * 2) * 0.05;
-      this.rocketGroup.rotation.x = Math.cos(point.time * 2) * 0.05;
-    } else if (this.parachuteMesh) {
-      this.parachuteMesh.visible = false;
-      this.parachuteMesh.scale.set(0.001, 0.001, 0.001);
-      this.rocketGroup.rotation.set(0, 0, 0);
-    }
-
-    this.updateCamera(point);
-    window.dispatchEvent(new CustomEvent("telemetry-update", { detail: point }));
+  setCameraMode(mode) {
+    this.cameraMode = mode;
   }
 
-  updateCamera(point) {
-    const { posX: rX, posY: rY, posZ: rZ } = point;
+  updateCamera() {
+    if (!this.controls) return;
+    const rY = this.rocketGroup.position.y;
+    const rX = this.rocketGroup.position.x;
+    const rZ = this.rocketGroup.position.z;
+
     if (this.cameraMode === "pad") {
-      this.controls.enabled = true;
-      this.controls.target.set(rX, Math.min(rY, 400), rZ);
+      this.controls.target.set(rX, rY + 1.0, rZ);
     } else if (this.cameraMode === "follow") {
-      this.controls.enabled = false;
-      this.camera.position.set(rX + 8, rY + 6, rZ + 12);
-      this.camera.lookAt(rX, rY + 1, rZ);
+      this.camera.position.set(rX + 8, rY + 3, rZ + 12);
+      this.controls.target.set(rX, rY, rZ);
     } else if (this.cameraMode === "rocket") {
-      this.controls.enabled = false;
-      this.camera.position.set(rX, rY + 0.8, rZ + 0.15);
-      this.camera.lookAt(rX, rY - 20, rZ);
+      this.camera.position.set(rX, rY + 0.6, rZ + 0.8);
+      this.controls.target.set(rX, rY + 10, rZ);
     }
   }
 
   animate() {
     requestAnimationFrame(() => this.animate());
 
-    if (this.isPlaying && this.trajectoryData.length > 0) {
-      this.playbackIndex += Math.round(1 * this.playbackSpeed);
+    if (this.isPlaying && this.trajectoryData && this.trajectoryData.length > 0) {
       if (this.playbackIndex < this.trajectoryData.length) {
-        this.updateFlightFrame(this.playbackIndex);
+        const point = this.trajectoryData[this.playbackIndex];
+
+        // Update rocket position
+        this.rocketGroup.position.y = point.altitude;
+        this.rocketGroup.position.x = point.x || 0;
+        this.rocketGroup.position.z = point.z || 0;
+
+        // Rotation & pitch
+        this.rocketGroup.rotation.z = -(point.pitch || 0);
+
+        // Propellant flame & particles
+        this.updatePropellant(point.thrust || 0, "Dark Matter");
+
+        // Parachute visibility
+        if (this.parachuteMesh) {
+          this.parachuteMesh.visible = !!point.parachuteDeployed;
+        }
+
+        // Dispatch telemetry event for HUD
+        window.dispatchEvent(new CustomEvent("telemetry-update", { detail: point }));
+
+        this.playbackIndex++;
       } else {
         this.isPlaying = false;
+        this.updatePropellant(0);
       }
     }
-    if (this.controls && this.controls.enabled) {
-      this.controls.update();
-    }
 
-    if (this.renderer && this.scene && this.camera) {
-      this.renderer.render(this.scene, this.camera);
-    }
+    this.updateCamera();
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
   }
 
   onWindowResize() {
     if (!this.container || !this.renderer || !this.camera) return;
-    const width = this.container.clientWidth || 800;
-    const height = this.container.clientHeight || 600;
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    if (width > 0 && height > 0) {
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(width, height);
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 /**
  * OpenRocket XML / .ork Archive Parser
- * Standard DOM traversal without fragile CSS selectors.
+ * Robust XML DOM traversal handling OpenRocket XML structure.
  */
 
 class OpenRocketParser {
@@ -47,43 +47,16 @@ class OpenRocketParser {
     // Rocket element
     const rocketNodes = doc.getElementsByTagName("rocket");
     const rocketNode = rocketNodes.length > 0 ? rocketNodes[0] : doc.documentElement;
-    
-    let rocketName = "Imported Rocket";
+
+    let rocketName = "Apogee Zephyr";
     for (let i = 0; i < rocketNode.childNodes.length; i++) {
-      if (rocketNode.childNodes[i].nodeName === "name") {
-        rocketName = rocketNode.childNodes[i].textContent || rocketName;
+      if (rocketNode.childNodes[i].nodeName.toLowerCase() === "name") {
+        rocketName = rocketNode.childNodes[i].textContent?.trim() || rocketName;
         break;
       }
     }
 
-    // Find the real physical stage (the <stage> that has a <subcomponents> child)
-    const stageNodes = doc.getElementsByTagName("stage");
-    let physicalStage = null;
-    for (let i = 0; i < stageNodes.length; i++) {
-      const s = stageNodes[i];
-      for (let j = 0; j < s.childNodes.length; j++) {
-        if (s.childNodes[j].nodeName === "subcomponents") {
-          physicalStage = s;
-          break;
-        }
-      }
-      if (physicalStage) break;
-    }
-
-    if (!physicalStage && stageNodes.length > 0) {
-      physicalStage = stageNodes[0];
-    }
-
-    let stageName = "Sustainer";
-    let stageSubcomponentsNode = null;
-    if (physicalStage) {
-      for (let i = 0; i < physicalStage.childNodes.length; i++) {
-        const cn = physicalStage.childNodes[i];
-        if (cn.nodeName === "name") stageName = cn.textContent || stageName;
-        if (cn.nodeName === "subcomponents") stageSubcomponentsNode = cn;
-      }
-    }
-
+    // Helper functions
     const parseNum = (str, fallback = 0) => {
       if (!str) return fallback;
       const clean = str.replace(/auto/gi, "").trim();
@@ -92,26 +65,64 @@ class OpenRocketParser {
     };
 
     const getChildText = (node, tagName, fallback = "") => {
+      if (!node) return fallback;
       for (let i = 0; i < node.childNodes.length; i++) {
-        if (node.childNodes[i].nodeName === tagName) {
-          return node.childNodes[i].textContent || fallback;
+        if (node.childNodes[i].nodeName.toLowerCase() === tagName.toLowerCase()) {
+          return node.childNodes[i].textContent?.trim() || fallback;
         }
       }
       return fallback;
     };
+
+    const getDirectChildren = (node) => {
+      const children = [];
+      if (!node) return children;
+      for (let i = 0; i < node.childNodes.length; i++) {
+        if (node.childNodes[i].nodeType === 1) { // Node.ELEMENT_NODE
+          children.push(node.childNodes[i]);
+        }
+      }
+      return children;
+    };
+
+    // Find the stage that contains rocket components
+    // OpenRocket hierarchy: <rocket> -> <subcomponents> -> <stage> -> <subcomponents> -> [<nosecone>, <bodytube>, ...]
+    let physicalStage = null;
+    let stageSubcomponentsNode = null;
+
+    const allSubcomponents = doc.getElementsByTagName("subcomponents");
+    for (let i = 0; i < allSubcomponents.length; i++) {
+      const sub = allSubcomponents[i];
+      const children = getDirectChildren(sub);
+      const hasRocketParts = children.some(c => {
+        const tag = c.nodeName.toLowerCase();
+        return tag === "nosecone" || tag === "bodytube" || tag === "transition";
+      });
+      if (hasRocketParts) {
+        stageSubcomponentsNode = sub;
+        if (sub.parentNode && sub.parentNode.nodeName.toLowerCase() === "stage") {
+          physicalStage = sub.parentNode;
+        }
+        break;
+      }
+    }
+
+    let stageName = "Sustainer";
+    if (physicalStage) {
+      stageName = getChildText(physicalStage, "name", "Sustainer");
+    }
 
     const components = [];
     let totalLength = 0;
     let maxRadius = 0.0508;
 
     if (stageSubcomponentsNode) {
-      for (let i = 0; i < stageSubcomponentsNode.childNodes.length; i++) {
-        const node = stageSubcomponentsNode.childNodes[i];
-        if (node.nodeType !== 1) continue; // skip text/comment nodes
+      const stageChildren = getDirectChildren(stageSubcomponentsNode);
 
+      stageChildren.forEach((node, nodeIdx) => {
         const tag = node.nodeName.toLowerCase();
         const compName = getChildText(node, "name", tag);
-        const compId = getChildText(node, "id", `id-${Date.now()}-${Math.random()}`);
+        const compId = getChildText(node, "id", `id-${nodeIdx}-${Date.now()}`);
 
         if (tag === "nosecone") {
           const len = parseNum(getChildText(node, "length"), 0.503);
@@ -136,69 +147,73 @@ class OpenRocketParser {
           if (rad > maxRadius) maxRadius = rad;
           totalLength += len;
 
-          // Nested subcomponents
+          // Parse nested subcomponents inside this body tube
           const children = [];
-          for (let j = 0; j < node.childNodes.length; j++) {
-            const innerSub = node.childNodes[j];
-            if (innerSub.nodeName === "subcomponents") {
-              for (let k = 0; k < innerSub.childNodes.length; k++) {
-                const childNode = innerSub.childNodes[k];
-                if (childNode.nodeType !== 1) continue;
+          const tubeSub = getDirectChildren(node).find(c => c.nodeName.toLowerCase() === "subcomponents");
 
-                const childTag = childNode.nodeName.toLowerCase();
-                const childName = getChildText(childNode, "name", childTag);
-                const childId = getChildText(childNode, "id", `child-${Math.random()}`);
+          if (tubeSub) {
+            const innerElements = getDirectChildren(tubeSub);
+            innerElements.forEach((childNode, chIdx) => {
+              const childTag = childNode.nodeName.toLowerCase();
+              const childName = getChildText(childNode, "name", childTag);
+              const childId = getChildText(childNode, "id", `child-${nodeIdx}-${chIdx}`);
 
-                if (childTag === "tubecoupler") {
-                  children.push({
-                    id: childId,
-                    type: "coupler",
-                    name: childName,
-                    length: parseNum(getChildText(childNode, "length"), 0.20),
-                    radius: parseNum(getChildText(childNode, "radius"), rad * 0.98)
-                  });
-                } else if (childTag === "parachute") {
-                  children.push({
-                    id: childId,
-                    type: "parachute",
-                    name: childName,
-                    diameter: parseNum(getChildText(childNode, "diameter"), 1.22)
-                  });
-                } else if (childTag.includes("finset") || childTag.includes("fins")) {
-                  children.push({
-                    id: childId,
-                    type: "fins",
-                    name: childName,
-                    count: parseInt(getChildText(childNode, "fincount", "3"), 10),
-                    rootChord: parseNum(getChildText(childNode, "rootchord"), 0.22),
-                    tipChord: parseNum(getChildText(childNode, "tipchord"), 0.09),
-                    span: parseNum(getChildText(childNode, "height"), 0.125),
-                    sweepLength: parseNum(getChildText(childNode, "sweeplength"), 0.13)
-                  });
-                } else if (childTag === "innertube") {
-                  children.push({
-                    id: childId,
-                    type: "innertube",
-                    name: childName,
-                    length: parseNum(getChildText(childNode, "length"), 0.279),
-                    radius: parseNum(getChildText(childNode, "innerradius") || getChildText(childNode, "radius"), 0.019)
-                  });
-                } else if (childTag === "centeringring") {
-                  children.push({
-                    id: childId,
-                    type: "ring",
-                    name: childName,
-                    position: parseNum(getChildText(childNode, "position"), 0.02)
-                  });
-                } else {
-                  children.push({
-                    id: childId,
-                    type: childTag,
-                    name: childName
-                  });
-                }
+              if (childTag === "tubecoupler") {
+                children.push({
+                  id: childId,
+                  type: "coupler",
+                  name: childName,
+                  length: parseNum(getChildText(childNode, "length"), 0.203),
+                  radius: parseNum(getChildText(childNode, "radius"), rad * 0.98)
+                });
+              } else if (childTag === "parachute") {
+                children.push({
+                  id: childId,
+                  type: "parachute",
+                  name: childName,
+                  diameter: parseNum(getChildText(childNode, "diameter"), 0.914)
+                });
+              } else if (childTag.includes("finset") || childTag.includes("fin")) {
+                children.push({
+                  id: childId,
+                  type: "fins",
+                  name: childName,
+                  count: parseInt(getChildText(childNode, "fincount", "3"), 10),
+                  rootChord: parseNum(getChildText(childNode, "rootchord"), 0.22),
+                  tipChord: parseNum(getChildText(childNode, "tipchord"), 0.09),
+                  span: parseNum(getChildText(childNode, "height") || getChildText(childNode, "span"), 0.125),
+                  sweepLength: parseNum(getChildText(childNode, "sweeplength"), 0.13)
+                });
+              } else if (childTag === "innertube") {
+                children.push({
+                  id: childId,
+                  type: "innertube",
+                  name: childName,
+                  length: parseNum(getChildText(childNode, "length"), 0.279),
+                  radius: parseNum(getChildText(childNode, "innerradius") || getChildText(childNode, "radius"), 0.019)
+                });
+              } else if (childTag === "centeringring") {
+                children.push({
+                  id: childId,
+                  type: "ring",
+                  name: childName,
+                  position: parseNum(getChildText(childNode, "position"), 0.02)
+                });
+              } else if (childTag === "shockcord") {
+                children.push({
+                  id: childId,
+                  type: "shockcord",
+                  name: childName,
+                  length: parseNum(getChildText(childNode, "cordlength"), 7.5)
+                });
+              } else {
+                children.push({
+                  id: childId,
+                  type: childTag,
+                  name: childName
+                });
               }
-            }
+            });
           }
 
           components.push({
@@ -211,7 +226,7 @@ class OpenRocketParser {
             children: children
           });
         }
-      }
+      });
     }
 
     // Motor check
@@ -274,7 +289,7 @@ class OpenRocketParser {
     const finCorrection = 1 + (R / (s + R));
     const CN_fins = finCorrection * ((4 * count * Math.pow(s / d, 2)) / (1 + Math.sqrt(1 + Math.pow((2 * lf) / (cr + ct), 2))));
 
-    const finRootPos = this.rocket.length - cr;
+    const finRootPos = Math.max(0, this.rocket.length - cr);
     const X_fins = finRootPos + (sweep / 3) * ((cr + 2 * ct) / (cr + ct)) + (1 / 6) * ((Math.pow(cr, 2) + Math.pow(ct, 2) + cr * ct) / (cr + ct));
 
     const totalCN = CN_nose + CN_fins;
