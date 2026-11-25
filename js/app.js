@@ -14,12 +14,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const blueprint = new RocketBlueprintRenderer("blueprint-canvas", "ruler-canvas");
   const flightVisualizer = new Rocket3DVisualizer("canvas-container", false);
 
-  // Active Rocket Architecture
+  // Active Rocket Architecture (Zephyr Default)
   let activeRocket = {
     name: "Apogee Zephyr",
     stage: "Sustainer",
     components: [
-      { id: "comp-1", type: "nosecone", name: "Nose cone", length: 0.503, radius: 0.051, color: "white" },
+      { id: "comp-1", type: "nosecone", name: "Nose cone", length: 0.503, radius: 0.051, color: "white", children: [] },
       { id: "comp-2", type: "bodytube", name: "Body tube", length: 0.457, radius: 0.051, color: "white", children: [
         { id: "comp-2a", type: "coupler", name: "Tube coupler", length: 0.15, radius: 0.049 },
         { id: "comp-2b", type: "parachute", name: "Parachute", diameter: 1.22 }
@@ -141,11 +141,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Root Sustainer Node
     const root = document.createElement("div");
     root.className = "flex items-center gap-1 text-slate-800 font-bold px-1 py-0.5";
-    root.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-sky-600"></i> <span>Sustainer</span>`;
+    root.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-sky-600"></i> <span>${activeRocket.stage || "Sustainer"}</span>`;
     treeContainer.appendChild(root);
 
     // Components List
-    activeRocket.components.forEach((comp, idx) => {
+    (activeRocket.components || []).forEach((comp) => {
       const item = document.createElement("div");
       const isSelected = selectedComponent === comp;
       item.className = `flex items-center justify-between pl-4 pr-1 py-1 rounded cursor-pointer ${
@@ -269,7 +269,8 @@ document.addEventListener("DOMContentLoaded", () => {
       name: "Nose cone",
       length: 0.503,
       radius: 0.051,
-      color: "white"
+      color: "white",
+      children: []
     });
     recalcStability();
     renderTree();
@@ -293,7 +294,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   toolAddFreeformFins.addEventListener("click", () => {
     const lastTube = activeRocket.components[activeRocket.components.length - 1];
-    if (lastTube && lastTube.children) {
+    if (lastTube) {
+      if (!lastTube.children) lastTube.children = [];
       lastTube.children.push({
         id: "fins-" + Date.now(),
         type: "fins",
@@ -363,7 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateReadouts() {
     let len = 0;
-    activeRocket.components.forEach(c => {
+    (activeRocket.components || []).forEach(c => {
       if (c.length) len += c.length;
     });
     activeRocket.length = len;
@@ -372,6 +374,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const cpCm = (activeRocket.cp || 1.21) * 100;
     const stabCal = (((activeRocket.cp || 1.21) - (activeRocket.cg || 1.02)) / 0.102).toFixed(2);
 
+    document.getElementById("active-rocket-title").textContent = `${activeRocket.name} (${activeRocket.stage || "Sustainer"})`;
+    document.getElementById("info-rocket-title").textContent = `Rocket: ${activeRocket.name}`;
     document.getElementById("info-len").textContent = `${Math.round(len * 100)} cm`;
     document.getElementById("info-cg").textContent = `${Math.round(cgCm)} cm`;
     document.getElementById("info-cp").textContent = `${Math.round(cpCm)} cm`;
@@ -483,7 +487,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-re-simulate").addEventListener("click", () => runSimulation());
 
   // -------------------------------------------------------------
-  // 7. FILE IMPORT / EXPORT
+  // 7. FILE IMPORT / EXPORT (Fixed to immediately refresh blueprint & tree)
   // -------------------------------------------------------------
   orkFileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -492,12 +496,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const buffer = await file.arrayBuffer();
       const parsed = await parser.parseOrkFile(buffer);
       activeRocket = parsed;
+      selectedComponent = activeRocket.components[0] || null;
+
       recalcStability();
       renderTree();
       blueprint.setRocket(activeRocket);
       switchTab("design");
     } catch (err) {
       alert("Error parsing .ork file: " + err.message);
+      console.error(err);
     }
   });
 
