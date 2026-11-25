@@ -122,6 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (target === "sims") {
       viewFlightSims.classList.remove("hidden");
       tabFlightSims.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
+      flightVisualizer.buildRocketModel(activeRocket);
       setTimeout(() => flightVisualizer.onWindowResize(), 50);
       runSimulation();
     }
@@ -501,6 +502,7 @@ document.addEventListener("DOMContentLoaded", () => {
       recalcStability();
       renderTree();
       blueprint.setRocket(activeRocket);
+      flightVisualizer.buildRocketModel(activeRocket);
       switchTab("design");
     } catch (err) {
       alert("Error parsing .ork file: " + err.message);

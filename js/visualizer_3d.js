@@ -1,8 +1,6 @@
 /**
- * Enhanced Three.js 3D Visualizer & Studio
- * Dual Mode:
- *   - Studio Design Mode (Orbit inspection with CG/CP indicators)
- *   - Launch Simulation Mode (Pad, Chase, On-board, Top-down views with dynamic exhaust & smoke)
+ * Enhanced Three.js 3D Visualizer & Launch World
+ * Renders rocket geometry reliably, handling nested fin sets, motor casings, and launches!
  */
 
 class Rocket3DVisualizer {
@@ -24,9 +22,7 @@ class Rocket3DVisualizer {
     this.flameMesh = null;
     this.sparksSystem = null;
     this.smokeSystem = null;
-    this.sparkPositions = [];
     this.sparkVelocities = [];
-    this.smokePositions = [];
     this.smokeVelocities = [];
 
     this.cameraMode = "pad";
@@ -40,83 +36,55 @@ class Rocket3DVisualizer {
   }
 
   init() {
-    const width = this.container.clientWidth || 800;
-    const height = this.container.clientHeight || 600;
+    const width = (this.container && this.container.clientWidth) ? this.container.clientWidth : 800;
+    const height = (this.container && this.container.clientHeight) ? this.container.clientHeight : 600;
 
     // 1. Scene
     this.scene = new THREE.Scene();
-    if (this.isDesignStudio) {
-      this.scene.background = new THREE.Color(0x090d16); // Clean CAD studio dark slate
-      this.camera = new THREE.PerspectiveCamera(40, width / height, 0.05, 500);
-      this.camera.position.set(2.2, 1.2, 2.8);
-    } else {
-      this.scene.background = new THREE.Color(0x0a1128); // Desert twilight
-      this.scene.fog = new THREE.FogExp2(0x0a1128, 0.0004);
-      this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
-      this.camera.position.set(4, 3, 6);
-    }
+    this.scene.background = new THREE.Color(0x0a1128);
+    this.scene.fog = new THREE.FogExp2(0x0a1128, 0.0004);
+
+    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+    this.camera.position.set(4, 3, 6);
 
     // 2. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
     // 3. Controls
     this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
-    if (!this.isDesignStudio) {
-      this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
-    }
+    this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
 
     // 4. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, this.isDesignStudio ? 0.8 : 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(20, 40, 20);
-    keyLight.castShadow = true;
-    this.scene.add(keyLight);
+    const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.2);
+    sunLight.position.set(50, 100, 30);
+    this.scene.add(sunLight);
 
     const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.4);
     fillLight.position.set(-20, -10, -20);
     this.scene.add(fillLight);
 
     // 5. Environment
-    if (this.isDesignStudio) {
-      this.createStudioGrid();
-    } else {
-      this.createFlightGround();
-      this.createLaunchPad();
-    }
+    this.createFlightGround();
+    this.createLaunchPad();
 
-    // 6. Rocket & Indicators
+    // 6. Rocket Group & Propellant FX
     this.scene.add(this.rocketGroup);
-    this.scene.add(this.indicatorsGroup);
-
-    if (!this.isDesignStudio) {
-      this.createPropellantEffects();
-    }
+    this.createPropellantEffects();
 
     window.addEventListener("resize", () => this.onWindowResize());
     this.animate();
   }
 
-  createStudioGrid() {
-    const grid = new THREE.GridHelper(4, 20, 0x0ea5e9, 0x1e293b);
-    grid.position.y = 0;
-    this.scene.add(grid);
-
-    const axes = new THREE.AxesHelper(0.5);
-    axes.position.set(-1.2, 0.01, -1.2);
-    this.scene.add(axes);
-  }
-
   createFlightGround() {
-    const groundGeo = new THREE.PlaneGeometry(8000, 8000, 32, 32);
+    const groundGeo = new THREE.PlaneGeometry(8000, 8000, 16, 16);
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x8b7d6b,
       roughness: 0.9,
@@ -124,7 +92,6 @@ class Rocket3DVisualizer {
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
     this.scene.add(ground);
 
     const grid = new THREE.GridHelper(200, 40, 0x38bdf8, 0x334155);
@@ -160,27 +127,20 @@ class Rocket3DVisualizer {
     this.scene.add(padGroup);
   }
 
-  /**
-   * High-Tech Exhaust & Propellant FX (Dark Matter Sparks, Flame & Smoke)
-   */
   createPropellantEffects() {
     this.rocketGroup.add(this.exhaustGroup);
 
-    // 1. Fiery Mach Shock Flame Cone
+    // 1. Fiery Flame Cone
     const flameGeo = new THREE.ConeGeometry(0.07, 0.65, 16);
-    const flameMat = new THREE.MeshBasicMaterial({
-      color: 0xff4500,
-      transparent: true,
-      opacity: 0.9
-    });
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.9 });
     this.flameMesh = new THREE.Mesh(flameGeo, flameMat);
     this.flameMesh.rotation.x = Math.PI;
     this.flameMesh.position.y = 0.0;
     this.flameMesh.visible = false;
     this.exhaustGroup.add(this.flameMesh);
 
-    // 2. Dark Matter Sparks Particle System (Bright golden crackling embers)
-    const sparkCount = 300;
+    // 2. Sparks Particles
+    const sparkCount = 200;
     const sparkGeo = new THREE.BufferGeometry();
     const sparkPos = new Float32Array(sparkCount * 3);
     this.sparkVelocities = [];
@@ -191,7 +151,7 @@ class Rocket3DVisualizer {
       sparkPos[i * 3 + 2] = 0;
       this.sparkVelocities.push({
         vx: (Math.random() - 0.5) * 1.5,
-        vy: -(Math.random() * 8 + 4), // shooting down
+        vy: -(Math.random() * 8 + 4),
         vz: (Math.random() - 0.5) * 1.5,
         life: Math.random()
       });
@@ -209,8 +169,8 @@ class Rocket3DVisualizer {
     this.sparksSystem.visible = false;
     this.exhaustGroup.add(this.sparksSystem);
 
-    // 3. Dense Black & Grey Smoke Plume
-    const smokeCount = 200;
+    // 3. Smoke Particles
+    const smokeCount = 150;
     const smokeGeo = new THREE.BufferGeometry();
     const smokePos = new Float32Array(smokeCount * 3);
     this.smokeVelocities = [];
@@ -247,16 +207,14 @@ class Rocket3DVisualizer {
       this.sparksSystem.visible = true;
       this.smokeSystem.visible = true;
 
-      // Pulse flame with thrust
       const pulse = 0.8 + Math.random() * 0.4;
       const intensity = Math.min(thrustLevel / 280, 1.4);
       this.flameMesh.scale.set(pulse * intensity, pulse * 1.6 * intensity, pulse * intensity);
 
-      // Color based on propellant
       if (propellantType.includes("White")) {
-        this.flameMesh.material.color.setHex(0xe0f2fe); // White Lightning
+        this.flameMesh.material.color.setHex(0xe0f2fe);
       } else {
-        this.flameMesh.material.color.setHex(0xff3700); // Dark Matter orange
+        this.flameMesh.material.color.setHex(0xff3700);
       }
 
       // Animate Sparks
@@ -293,7 +251,6 @@ class Rocket3DVisualizer {
         }
       }
       this.smokeSystem.geometry.attributes.position.needsUpdate = true;
-
     } else {
       this.flameMesh.visible = false;
       this.sparksSystem.visible = false;
@@ -302,49 +259,38 @@ class Rocket3DVisualizer {
   }
 
   /**
-   * Builds 3D rocket model dynamically from components list
+   * Robust 3D Rocket Builder:
+   * Handles tubes, nose cones, and fins (either as direct components or nested children)
    */
   buildRocketModel(rocketConfig) {
     this.activeRocket = rocketConfig;
 
-    // Clear old geometry
-    while (this.rocketGroup.children.length > 0) {
-      const child = this.rocketGroup.children[0];
-      if (child === this.exhaustGroup) {
-        this.rocketGroup.remove(child);
-        break;
-      }
-      this.rocketGroup.remove(child);
-    }
-    if (!this.isDesignStudio && this.exhaustGroup) {
-      this.rocketGroup.add(this.exhaustGroup);
-    }
+    // Clear previous geometry except exhaustGroup
+    const toRemove = [];
+    this.rocketGroup.children.forEach(c => {
+      if (c !== this.exhaustGroup) toRemove.push(c);
+    });
+    toRemove.forEach(c => this.rocketGroup.remove(c));
 
-    const comps = rocketConfig?.components || [
-      { type: "nosecone", name: "Ogive Nose Cone", length: 0.503, radius: 0.051, color: "red" },
-      { type: "bodytube", name: "Upper Body Tube", length: 0.457, radius: 0.051, color: "white" },
-      { type: "bodytube", name: "Lower Body Tube", length: 0.457, radius: 0.051, color: "white" },
-      { type: "fins", name: "Plywood TTW Fins", count: 3, rootChord: 0.22, span: 0.125, tipChord: 0.09, sweepLength: 0.13, color: "black" }
-    ];
-
-    let currentY = this.isDesignStudio ? 0 : 0.35; // base altitude
+    const comps = rocketConfig?.components || [];
+    let currentY = 0.35; // pad height offset
     const baseOffset = currentY;
 
-    // Build parts from tail to nose
-    const bodyTubes = comps.filter(c => c.type === "bodytube");
-    const nose = comps.find(c => c.type === "nosecone");
-    const fins = comps.find(c => c.type === "fins");
+    // Find fins either top level or inside any body tube
+    let foundFins = comps.find(c => c.type === "fins");
+    if (!foundFins) {
+      comps.forEach(c => {
+        if (c.children) {
+          const f = c.children.find(ch => ch.type === "fins");
+          if (f) foundFins = f;
+        }
+      });
+    }
 
-    // Colors
-    const getColorMat = (colorStr, defColor = 0xf8fafc) => {
-      let hex = defColor;
-      if (colorStr === "red") hex = 0xef4444;
-      else if (colorStr === "orange") hex = 0xf97316;
-      else if (colorStr === "black") hex = 0x1e293b;
-      else if (colorStr === "yellow") hex = 0xeab308;
-      else if (colorStr === "white") hex = 0xf8fafc;
-      return new THREE.MeshStandardMaterial({ color: hex, roughness: 0.35, metalness: 0.15 });
-    };
+    // Materials
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35, metalness: 0.1 });
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 });
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.2 });
 
     // 1. Motor Casing
     const motorGeo = new THREE.CylinderGeometry(0.019, 0.019, 0.356, 32);
@@ -353,114 +299,66 @@ class Rocket3DVisualizer {
     motorMesh.position.y = currentY + 0.356 / 2;
     this.rocketGroup.add(motorMesh);
 
-    // 2. Body Tubes
-    bodyTubes.forEach((tube, idx) => {
-      const radius = tube.radius || 0.051;
+    // 2. Body Tubes (Reverse or straight order - tail to nose)
+    const tubes = comps.filter(c => c.type === "bodytube");
+    tubes.forEach(tube => {
+      const radius = tube.radius || 0.0508;
       const len = tube.length || 0.457;
       const tubeGeo = new THREE.CylinderGeometry(radius, radius, len, 32);
-      const tubeMesh = new THREE.Mesh(tubeGeo, getColorMat(tube.color || "white"));
+      const tubeMesh = new THREE.Mesh(tubeGeo, whiteMat);
       tubeMesh.position.y = currentY + len / 2;
-      tubeMesh.castShadow = true;
-      tubeMesh.userData = { component: tube, index: idx };
       this.rocketGroup.add(tubeMesh);
       currentY += len;
     });
 
-    // 3. Fins (Mounted on lowest body tube)
-    if (fins) {
-      const finCount = fins.count || 3;
-      const span = fins.span || 0.125;
-      const rootChord = fins.rootChord || 0.22;
-      const tipChord = fins.tipChord || 0.09;
-      const sweep = fins.sweepLength || 0.13;
-      const finMat = getColorMat(fins.color || "black", 0x1e293b);
+    // 3. Nose Cone
+    const nose = comps.find(c => c.type === "nosecone");
+    if (nose) {
+      const nLen = nose.length || 0.503;
+      const nRad = nose.radius || 0.0508;
+      const noseGeo = new THREE.ConeGeometry(nRad, nLen, 32);
+      const noseMesh = new THREE.Mesh(noseGeo, redMat);
+      noseMesh.position.y = currentY + nLen / 2;
+      this.rocketGroup.add(noseMesh);
+      currentY += nLen;
+    }
 
-      for (let i = 0; i < finCount; i++) {
-        const angle = (i * 2 * Math.PI) / finCount;
+    // 4. Fins (Mount to base of lowest tube)
+    if (foundFins) {
+      const count = foundFins.count || 3;
+      const span = foundFins.span || 0.125;
+      const root = foundFins.rootChord || 0.22;
+      const tip = foundFins.tipChord || 0.09;
+      const sweep = foundFins.sweepLength || 0.13;
+
+      for (let i = 0; i < count; i++) {
+        const angle = (i * 2 * Math.PI) / count;
         const finShape = new THREE.Shape();
         finShape.moveTo(0, 0);
         finShape.lineTo(span, sweep);
-        finShape.lineTo(span, sweep + tipChord);
-        finShape.lineTo(0, rootChord);
+        finShape.lineTo(span, sweep + tip);
+        finShape.lineTo(0, root);
         finShape.closePath();
 
         const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.005, bevelEnabled: false });
         const finMesh = new THREE.Mesh(finGeo, finMat);
         finMesh.rotation.y = angle;
         finMesh.position.y = baseOffset + 0.02;
-        finMesh.castShadow = true;
         this.rocketGroup.add(finMesh);
       }
     }
 
-    // 4. Nose Cone
-    if (nose) {
-      const nLen = nose.length || 0.503;
-      const nRad = nose.radius || 0.051;
-      const noseGeo = new THREE.ConeGeometry(nRad, nLen, 32);
-      const noseMesh = new THREE.Mesh(noseGeo, getColorMat(nose.color || "red", 0xef4444));
-      noseMesh.position.y = currentY + nLen / 2;
-      noseMesh.castShadow = true;
-      this.rocketGroup.add(noseMesh);
-      currentY += nLen;
-    }
-
-    // 5. Parachute (for flight sim)
-    if (!this.isDesignStudio) {
-      const chuteGeo = new THREE.SphereGeometry(0.45, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-      const chuteMat = new THREE.MeshStandardMaterial({ color: 0xf97316, side: THREE.DoubleSide });
-      this.parachuteMesh = new THREE.Mesh(chuteGeo, chuteMat);
-      this.parachuteMesh.position.y = currentY + 0.8;
-      this.parachuteMesh.scale.set(0.001, 0.001, 0.001);
-      this.rocketGroup.add(this.parachuteMesh);
-    }
-
-    // 6. Stability Indicators in Design Studio (CG / CP)
-    if (this.isDesignStudio) {
-      this.renderStabilityIndicators(rocketConfig, currentY);
-    }
-  }
-
-  renderStabilityIndicators(rocketConfig, totalLength) {
-    while (this.indicatorsGroup.children.length > 0) {
-      this.indicatorsGroup.remove(this.indicatorsGroup.children[0]);
-    }
-
-    const cgPos = totalLength - (rocketConfig.cg || (totalLength * 0.72));
-    const cpPos = totalLength - (rocketConfig.cp || (totalLength * 0.85));
-
-    // CG Blue Sphere & Ring
-    const cgGeo = new THREE.SphereGeometry(0.025, 16, 16);
-    const cgMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
-    const cgMesh = new THREE.Mesh(cgGeo, cgMat);
-    cgMesh.position.set(0, cgPos, 0.065);
-    this.indicatorsGroup.add(cgMesh);
-
-    // CP Red Sphere & Ring
-    const cpGeo = new THREE.SphereGeometry(0.025, 16, 16);
-    const cpMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-    const cpMesh = new THREE.Mesh(cpGeo, cpMat);
-    cpMesh.position.set(0, cpPos, 0.065);
-    this.indicatorsGroup.add(cpMesh);
-
-    // Connecting Stems
-    const lineGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, cgPos, 0),
-      new THREE.Vector3(0, cgPos, 0.065)
-    ]);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x3b82f6 });
-    this.indicatorsGroup.add(new THREE.Line(lineGeo, lineMat));
-
-    const cpLineGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, cpPos, 0),
-      new THREE.Vector3(0, cpPos, 0.065)
-    ]);
-    const cpLineMat = new THREE.LineBasicMaterial({ color: 0xef4444 });
-    this.indicatorsGroup.add(new THREE.Line(cpLineGeo, cpLineMat));
+    // 5. Parachute
+    const chuteGeo = new THREE.SphereGeometry(0.45, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const chuteMat = new THREE.MeshStandardMaterial({ color: 0xf97316, side: THREE.DoubleSide });
+    this.parachuteMesh = new THREE.Mesh(chuteGeo, chuteMat);
+    this.parachuteMesh.position.y = currentY + 0.8;
+    this.parachuteMesh.scale.set(0.001, 0.001, 0.001);
+    this.rocketGroup.add(this.parachuteMesh);
   }
 
   loadSimulationTrajectory(trajData) {
-    this.trajectoryData = trajData;
+    this.trajectoryData = trajData || [];
     this.playbackIndex = 0;
   }
 
@@ -485,10 +383,8 @@ class Rocket3DVisualizer {
     const point = this.trajectoryData[index];
     this.rocketGroup.position.set(point.posX, point.posY, point.posZ);
 
-    // Exhaust & sparks
     this.updatePropellant(point.thrust, "Dark Matter");
 
-    // Parachute
     if (point.phase === "descent" && this.parachuteMesh) {
       this.parachuteMesh.visible = true;
       const scale = Math.min(1.0, this.parachuteMesh.scale.x + 0.1);
@@ -518,39 +414,33 @@ class Rocket3DVisualizer {
       this.controls.enabled = false;
       this.camera.position.set(rX, rY + 0.8, rZ + 0.15);
       this.camera.lookAt(rX, rY - 20, rZ);
-    } else if (this.cameraMode === "top") {
-      this.controls.enabled = false;
-      this.camera.position.set(rX, rY + 50, rZ + 1);
-      this.camera.lookAt(rX, rY, rZ);
     }
   }
 
   animate() {
     requestAnimationFrame(() => this.animate());
 
-    if (this.isDesignStudio) {
-      // Gentle rotation when idle in design studio
-      this.controls.update();
-    } else {
-      if (this.isPlaying && this.trajectoryData.length > 0) {
-        this.playbackIndex += Math.round(1 * this.playbackSpeed);
-        if (this.playbackIndex < this.trajectoryData.length) {
-          this.updateFlightFrame(this.playbackIndex);
-        } else {
-          this.isPlaying = false;
-        }
-      }
-      if (this.controls.enabled) {
-        this.controls.update();
+    if (this.isPlaying && this.trajectoryData.length > 0) {
+      this.playbackIndex += Math.round(1 * this.playbackSpeed);
+      if (this.playbackIndex < this.trajectoryData.length) {
+        this.updateFlightFrame(this.playbackIndex);
+      } else {
+        this.isPlaying = false;
       }
     }
+    if (this.controls && this.controls.enabled) {
+      this.controls.update();
+    }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.renderer && this.scene && this.camera) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   onWindowResize() {
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
+    if (!this.container || !this.renderer || !this.camera) return;
+    const width = this.container.clientWidth || 800;
+    const height = this.container.clientHeight || 600;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);

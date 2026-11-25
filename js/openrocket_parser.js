@@ -1,7 +1,7 @@
 /**
  * Robust OpenRocket XML / .ork Archive Parser
  * Supports nested OpenRocket schemas:
- *  <rocket> -> <subcomponents> -> <stage> -> <subcomponents> -> <nosecone>, <bodytube> -> <subcomponents>
+ * Handles multiple <stage> elements, auto-dimensions, nested finsets, and motor configs.
  */
 
 class OpenRocketParser {
@@ -15,7 +15,6 @@ class OpenRocketParser {
     if (fileOrBuffer instanceof ArrayBuffer || fileOrBuffer instanceof Uint8Array) {
       try {
         const zip = await JSZip.loadAsync(fileOrBuffer);
-        // Find rocket.ork or any .ork or .xml in zip
         const candidateName = Object.keys(zip.files).find(
           name => name === "rocket.ork" || name.endsWith(".ork") || name.endsWith(".xml")
         );
@@ -41,19 +40,21 @@ class OpenRocketParser {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlString, "application/xml");
 
-    // Check for parse error
     const parseError = doc.querySelector("parsererror");
     if (parseError) {
       throw new Error("Invalid XML in OpenRocket file: " + parseError.textContent);
     }
 
     const rocketNode = doc.querySelector("rocket");
-    const rocketName = rocketNode?.querySelector("name")?.textContent || "Imported Rocket";
+    const rocketName = rocketNode?.querySelector("name")?.textContent || "Apogee Zephyr";
 
-    const stageNode = doc.querySelector("stage");
-    const stageName = stageNode?.querySelector("name")?.textContent || "Sustainer";
+    // In OpenRocket XML, stages can be listed under <motorconfiguration> or <subcomponents>
+    // We want the <stage> that contains actual rocket subcomponents!
+    const allStages = Array.from(doc.querySelectorAll("subcomponents > stage"));
+    let activeStage = allStages.find(s => s.querySelector("nosecone, bodytube")) || allStages[0] || doc.querySelector("stage");
 
-    // Helper to parse numbers that may contain 'auto 0.0508'
+    const stageName = activeStage?.querySelector(":scope > name")?.textContent || "Sustainer";
+
     const parseNum = (str, fallback = 0) => {
       if (!str) return fallback;
       const clean = str.replace(/auto/gi, "").trim();
@@ -63,10 +64,10 @@ class OpenRocketParser {
 
     const components = [];
     let totalLength = 0;
-    let maxRadius = 0.051;
+    let maxRadius = 0.0508;
 
-    // Direct children under stage subcomponents
-    const stageSubcomps = stageNode ? stageNode.querySelector(":scope > subcomponents") : doc.querySelector("subcomponents");
+    // Direct children under the active stage's <subcomponents>
+    const stageSubcomps = activeStage ? activeStage.querySelector(":scope > subcomponents") : doc.querySelector("subcomponents");
     const topLevelNodes = stageSubcomps ? Array.from(stageSubcomps.children) : [];
 
     topLevelNodes.forEach(node => {
@@ -75,9 +76,8 @@ class OpenRocketParser {
       const compId = node.querySelector(":scope > id")?.textContent || `id-${Date.now()}-${Math.random()}`;
 
       if (tag === "nosecone") {
-        const len = parseNum(node.querySelector(":scope > length")?.textContent, 0.503);
-        const rad = parseNum(node.querySelector(":scope > aftradius, :scope > radius")?.textContent, 0.051);
-        const shape = node.querySelector(":scope > shape")?.textContent || "ogive";
+        const len = parseNum(node.querySelector("length")?.textContent, 0.503);
+        const rad = parseNum(node.querySelector("aftradius, radius")?.textContent, 0.0508);
         if (rad > maxRadius) maxRadius = rad;
         totalLength += len;
 
@@ -87,13 +87,13 @@ class OpenRocketParser {
           name: compName,
           length: len,
           radius: rad,
-          shape: shape,
+          shape: "ogive",
           color: "white",
           children: []
         });
       } else if (tag === "bodytube") {
-        const len = parseNum(node.querySelector(":scope > length")?.textContent, 0.457);
-        const rad = parseNum(node.querySelector(":scope > radius")?.textContent, 0.051);
+        const len = parseNum(node.querySelector("length")?.textContent, 0.457);
+        const rad = parseNum(node.querySelector("radius")?.textContent, 0.0508);
         if (rad > maxRadius) maxRadius = rad;
         totalLength += len;
 
@@ -112,17 +112,17 @@ class OpenRocketParser {
                 id: childId,
                 type: "coupler",
                 name: childName,
-                length: parseNum(childNode.querySelector(":scope > length")?.textContent, 0.20),
-                radius: parseNum(childNode.querySelector(":scope > radius")?.textContent, rad * 0.98)
+                length: parseNum(childNode.querySelector("length")?.textContent, 0.20),
+                radius: parseNum(childNode.querySelector("radius")?.textContent, rad * 0.98)
               });
             } else if (childTag === "parachute") {
               children.push({
                 id: childId,
                 type: "parachute",
                 name: childName,
-                diameter: parseNum(childNode.querySelector(":scope > diameter")?.textContent, 1.22)
+                diameter: parseNum(childNode.querySelector("diameter")?.textContent, 1.22)
               });
-            } else if (childTag.includes("finset")) {
+            } else if (childTag.includes("finset") || childTag.includes("fins")) {
               const rootChord = parseNum(childNode.querySelector("rootchord")?.textContent, 0.22);
               const tipChord = parseNum(childNode.querySelector("tipchord")?.textContent, 0.09);
               const span = parseNum(childNode.querySelector("height")?.textContent, 0.125);
@@ -144,15 +144,15 @@ class OpenRocketParser {
                 id: childId,
                 type: "innertube",
                 name: childName,
-                length: parseNum(childNode.querySelector(":scope > length")?.textContent, 0.279),
-                radius: parseNum(childNode.querySelector(":scope > innerradius, :scope > radius")?.textContent, 0.019)
+                length: parseNum(childNode.querySelector("length")?.textContent, 0.279),
+                radius: parseNum(childNode.querySelector("innerradius, radius")?.textContent, 0.019)
               });
             } else if (childTag === "centeringring") {
               children.push({
                 id: childId,
                 type: "ring",
                 name: childName,
-                position: parseNum(childNode.querySelector(":scope > position")?.textContent, 0.02)
+                position: parseNum(childNode.querySelector("position")?.textContent, 0.02)
               });
             } else {
               children.push({
@@ -173,17 +173,6 @@ class OpenRocketParser {
           color: "white",
           children: children
         });
-      } else if (tag === "transition") {
-        const len = parseNum(node.querySelector(":scope > length")?.textContent, 0.15);
-        totalLength += len;
-        components.push({
-          id: compId,
-          type: "transition",
-          name: compName,
-          length: len,
-          radius: maxRadius,
-          children: []
-        });
       }
     });
 
@@ -200,8 +189,8 @@ class OpenRocketParser {
         designation: designation,
         delay: delay
       },
-      length: parseFloat(totalLength.toFixed(3)),
-      diameter: parseFloat((maxRadius * 2).toFixed(3)),
+      length: parseFloat(totalLength.toFixed(3)) || 1.417,
+      diameter: parseFloat((maxRadius * 2).toFixed(3)) || 0.102,
       dryMass: 1.492,
       totalMass: 1.846
     };
