@@ -54,22 +54,14 @@
       backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
-    .hud-overlay {
-      pointer-events: none;
-    }
-    .hud-interactive {
-      pointer-events: auto;
-    }
-    .tab-active {
-      border-bottom: 2px solid #0ea5e9;
-      color: #38bdf8;
-    }
+    .hud-overlay { pointer-events: none; }
+    .hud-interactive { pointer-events: auto; }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden font-sans select-none">
 
-  <!-- TOP NAVIGATION BAR -->
-  <header class="h-14 border-b border-slate-800 bg-slate-900/90 px-4 flex items-center justify-between shrink-0 z-30">
+  <!-- TOP APP HEADER & WORKFLOW STAGES -->
+  <header class="h-14 border-b border-slate-800 bg-slate-900/95 px-4 flex items-center justify-between shrink-0 z-30">
     <div class="flex items-center gap-3">
       <div class="p-2 bg-gradient-to-tr from-brand-600 to-accent-orange rounded-lg shadow-lg shadow-sky-500/20">
         <i data-lucide="rocket" class="w-5 h-5 text-white"></i>
@@ -83,390 +75,453 @@
       </div>
     </div>
 
-    <!-- Mode Tabs -->
-    <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-      <button id="tab-design" class="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition text-slate-400 hover:text-white">
-        <i data-lucide="wrench" class="w-3.5 h-3.5"></i> Design
+    <!-- STAGES WORKFLOW TABS (Design First -> Then Flight Test) -->
+    <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+      <button id="workflow-step-1" class="px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition bg-brand-600 text-white shadow">
+        <span class="w-4 h-4 rounded-full bg-white text-brand-600 flex items-center justify-center text-[10px] font-bold">1</span>
+        <span>Rocket Designer & Specs</span>
       </button>
-      <button id="tab-launch" class="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition bg-brand-600 text-white shadow-sm">
-        <i data-lucide="play" class="w-3.5 h-3.5"></i> 3D Launch Simulation
+      <div class="text-slate-600 text-xs px-1">➔</div>
+      <button id="workflow-step-2" class="px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition text-slate-400 hover:text-white">
+        <span class="w-4 h-4 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center text-[10px] font-bold">2</span>
+        <span>Launch Pad & Weather</span>
       </button>
-      <button id="tab-telemetry" class="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition text-slate-400 hover:text-white">
-        <i data-lucide="line-chart" class="w-3.5 h-3.5"></i> Flight Data & Graphs
+      <div class="text-slate-600 text-xs px-1">➔</div>
+      <button id="workflow-step-3" class="px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition text-slate-400 hover:text-white">
+        <span class="w-4 h-4 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center text-[10px] font-bold">3</span>
+        <span>3D Flight Simulation</span>
       </button>
     </div>
 
-    <!-- Actions (Import, Export, Settings) -->
+    <!-- Quick Actions -->
     <div class="flex items-center gap-2">
       <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition">
         <i data-lucide="upload" class="w-3.5 h-3.5 text-sky-400"></i> Import .ork
         <input type="file" id="ork-file-input" accept=".ork,.xml" class="hidden">
       </label>
       <button id="btn-export-ork" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition">
-        <i data-lucide="download" class="w-3.5 h-3.5 text-slate-400"></i> Export
+        <i data-lucide="download" class="w-3.5 h-3.5 text-slate-400"></i> Export JSON
       </button>
       <button id="btn-quick-sample" class="bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition">
-        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Load Zephyr (L1)
+        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Reset Zephyr
       </button>
     </div>
   </header>
 
-  <!-- MAIN APPLICATION VIEW -->
+  <!-- WORKFLOW VIEW CONTAINER -->
   <main class="flex-1 flex overflow-hidden relative">
 
-    <!-- LEFT SIDEBAR: Flight Environment, Sites, & Rocket Specs -->
-    <aside class="w-80 border-r border-slate-800 bg-slate-900/95 flex flex-col shrink-0 z-20">
+    <!-- ======================================================== -->
+    <!-- VIEW 1: ROCKET DESIGNER & 2D/3D PART CONFIGURATION VIEW -->
+    <!-- ======================================================== -->
+    <div id="view-designer" class="flex-1 flex overflow-hidden">
       
-      <!-- Sub-panel toggle -->
-      <div class="grid grid-cols-2 border-b border-slate-800 text-xs font-medium text-center">
-        <button id="subtab-env" class="py-2.5 text-sky-400 border-b-2 border-sky-400 bg-slate-800/40">Launch & Weather</button>
-        <button id="subtab-spec" class="py-2.5 text-slate-400 hover:text-slate-200">Rocket Parts</button>
-      </div>
-
-      <!-- ENVIRONMENT & WEATHER PANEL -->
-      <div id="panel-env" class="flex-1 overflow-y-auto p-4 space-y-4">
-        
-        <!-- Launch Site Selection -->
-        <div class="space-y-1.5">
-          <label class="text-xs font-semibold text-slate-300 flex items-center justify-between">
-            <span class="flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-sky-400"></i> Launch Site</span>
-            <span id="site-coords" class="text-[10px] text-slate-500 font-mono">40.78° N, 119.20° W</span>
-          </label>
-          <select id="launch-site-select" class="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-sans">
-            <option value="black-rock" selected>Black Rock Desert, NV (BALLS / Tripoli)</option>
-            <option value="spaceport-am">Spaceport America, NM (Spaceport Cup)</option>
-            <option value="lucerne">Lucerne Valley, CA (ROC / ROCstock)</option>
-            <option value="argonia">Argonia, KS (Rocket City / LDRS)</option>
-            <option value="manchester">Manchester, TN (Music City Missile)</option>
-            <option value="kourou">Guiana Space Centre, Kourou (CSG)</option>
-            <option value="woomera">Woomera Test Range, Australia</option>
-            <option value="custom">Custom GPS Coordinates...</option>
-          </select>
-        </div>
-
-        <!-- Custom Coordinates Row (Hidden by default) -->
-        <div id="custom-coords-row" class="hidden grid-cols-2 gap-2">
-          <input type="number" id="custom-lat" placeholder="Latitude (°)" step="0.0001" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200">
-          <input type="number" id="custom-lon" placeholder="Longitude (°)" step="0.0001" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200">
-        </div>
-
-        <!-- Live Weather Card -->
-        <div class="glass-panel p-3 rounded-lg border border-slate-800 space-y-2.5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-              <i data-lucide="cloud-sun" class="w-4 h-4 text-amber-400"></i> Atmospheric Conditions
-            </span>
-            <button id="btn-fetch-live-weather" class="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-mono">
-              <i data-lucide="refresh-cw" class="w-3 h-3"></i> Sync Live
-            </button>
-          </div>
-
-          <!-- Date/Time Picker -->
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <label class="text-[10px] text-slate-400 uppercase font-mono">Date</label>
-              <input type="date" id="sim-date" class="w-full bg-slate-950 border border-slate-800 rounded p-1 text-[11px] text-slate-200">
-            </div>
-            <div>
-              <label class="text-[10px] text-slate-400 uppercase font-mono">Time</label>
-              <input type="time" id="sim-time" value="10:00" class="w-full bg-slate-950 border border-slate-800 rounded p-1 text-[11px] text-slate-200">
-            </div>
-          </div>
-
-          <!-- Weather Parameters -->
-          <div class="grid grid-cols-2 gap-2 pt-1 font-mono text-xs">
-            <div class="bg-slate-950/60 p-2 rounded border border-slate-800/80">
-              <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="wind" class="w-3 h-3 text-sky-400"></i> Wind Speed</div>
-              <div class="flex items-baseline gap-1 mt-0.5">
-                <input type="number" id="weather-wind-speed" value="6.5" step="0.5" class="w-14 bg-transparent font-bold text-white text-sm focus:outline-none">
-                <span class="text-[10px] text-slate-400">mph</span>
-              </div>
-            </div>
-            <div class="bg-slate-950/60 p-2 rounded border border-slate-800/80">
-              <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="compass" class="w-3 h-3 text-emerald-400"></i> Wind Dir</div>
-              <div class="flex items-baseline gap-1 mt-0.5">
-                <input type="number" id="weather-wind-dir" value="240" step="5" class="w-14 bg-transparent font-bold text-white text-sm focus:outline-none">
-                <span class="text-[10px] text-slate-400">° (WSW)</span>
-              </div>
-            </div>
-            <div class="bg-slate-950/60 p-2 rounded border border-slate-800/80">
-              <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="thermometer" class="w-3 h-3 text-amber-400"></i> Temp</div>
-              <div class="flex items-baseline gap-1 mt-0.5">
-                <input type="number" id="weather-temp" value="72" step="1" class="w-14 bg-transparent font-bold text-white text-sm focus:outline-none">
-                <span class="text-[10px] text-slate-400">°F</span>
-              </div>
-            </div>
-            <div class="bg-slate-950/60 p-2 rounded border border-slate-800/80">
-              <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="gauge" class="w-3 h-3 text-purple-400"></i> Pressure</div>
-              <div class="flex items-baseline gap-1 mt-0.5">
-                <input type="number" id="weather-pressure" value="1013" step="1" class="w-14 bg-transparent font-bold text-white text-sm focus:outline-none">
-                <span class="text-[10px] text-slate-400">mbar</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Launch Pad & Rail Setup -->
-        <div class="glass-panel p-3 rounded-lg border border-slate-800 space-y-2">
-          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-            <i data-lucide="move-up-right" class="w-3.5 h-3.5 text-sky-400"></i> Launch Rail Configuration
+      <!-- Component Tree & Inspector (Left) -->
+      <aside class="w-96 border-r border-slate-800 bg-slate-900/90 flex flex-col shrink-0">
+        <div class="p-3 border-b border-slate-800 flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+            <i data-lucide="layers" class="w-4 h-4 text-sky-400"></i> Component Tree
           </span>
-          <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="flex items-center gap-1">
+            <button id="btn-add-nose" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] rounded text-slate-200" title="Add Nose Cone">+ Nose</button>
+            <button id="btn-add-tube" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] rounded text-slate-200" title="Add Body Tube">+ Tube</button>
+            <button id="btn-add-fins" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] rounded text-slate-200" title="Add Fins">+ Fins</button>
+          </div>
+        </div>
+
+        <!-- Tree List of Parts -->
+        <div id="designer-parts-list" class="flex-1 overflow-y-auto p-3 space-y-2">
+          <!-- Populated dynamically by app.js -->
+        </div>
+
+        <!-- Live Barrowman Aerodynamics Card -->
+        <div class="p-3 bg-slate-950 border-t border-slate-800 space-y-2 text-xs font-mono">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Stability Margin:</span>
+            <span id="designer-stability" class="font-bold text-emerald-400 text-sm">1.82 cal (Optimal)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+            <div class="bg-slate-900 p-1.5 rounded">CG: <span id="designer-cg" class="text-white font-bold">1.02 m</span></div>
+            <div class="bg-slate-900 p-1.5 rounded">CP: <span id="designer-cp" class="text-white font-bold">1.21 m</span></div>
+          </div>
+          <div class="flex justify-between items-center text-[11px] text-slate-400">
+            <span>Airframe Diameter: <span id="designer-dia" class="text-slate-200 font-bold">4.0 in (102mm)</span></span>
+            <span>Length: <span id="designer-len" class="text-slate-200 font-bold">55.8 in (1.42m)</span></span>
+          </div>
+          <button id="btn-proceed-to-env" class="w-full py-2 bg-gradient-to-r from-brand-600 to-sky-500 hover:from-brand-500 hover:to-sky-400 rounded-lg text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition">
+            Proceed to Launch Setup <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- 3D Design Preview & Interactive Part Inspector (Center) -->
+      <section class="flex-1 relative flex flex-col bg-slate-950">
+        <!-- 3D Orbit View for Design Studio -->
+        <div id="design-canvas-container" class="w-full h-full relative cursor-grab active:cursor-grabbing"></div>
+
+        <!-- Design HUD Overlay -->
+        <div class="absolute top-4 left-4 glass-panel p-3 rounded-lg border border-slate-800 text-xs font-mono space-y-1">
+          <div class="text-slate-400 text-[10px] uppercase font-bold tracking-wider">3D Design Studio</div>
+          <div class="text-slate-200 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Blue Dot = Center of Gravity (CG)
+          </div>
+          <div class="text-slate-200 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> Red Dot = Center of Pressure (CP)
+          </div>
+        </div>
+
+        <!-- Active Component Properties Modal / Drawer (when part is clicked) -->
+        <div id="part-properties-card" class="absolute bottom-4 right-4 glass-panel p-4 rounded-xl border border-slate-800 w-80 text-xs space-y-3 shadow-2xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span id="prop-part-name" class="font-bold text-slate-100 flex items-center gap-1.5">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5 text-sky-400"></i> Part Properties
+            </span>
+            <span id="prop-part-type" class="text-[10px] text-slate-400 font-mono uppercase bg-slate-800 px-1.5 py-0.5 rounded">Body Tube</span>
+          </div>
+          <div class="space-y-2 font-mono">
             <div>
-              <label class="text-[10px] text-slate-400">Rail Length</label>
-              <select id="rail-length" class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200">
-                <option value="1.83">6 ft (1.83 m)</option>
-                <option value="2.44" selected>8 ft (2.44 m)</option>
-                <option value="3.66">12 ft (3.66 m)</option>
+              <label class="text-[10px] text-slate-400 block">Length (inches)</label>
+              <input type="number" id="prop-len-in" value="18.0" step="0.5" class="w-full bg-slate-950 border border-slate-800 rounded p-1 text-slate-200">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 block">Outer Diameter (inches)</label>
+              <input type="number" id="prop-dia-in" value="4.0" step="0.1" class="w-full bg-slate-950 border border-slate-800 rounded p-1 text-slate-200">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 block">Color / Finish</label>
+              <select id="prop-color" class="w-full bg-slate-950 border border-slate-800 rounded p-1 text-slate-200">
+                <option value="white">Gloss White</option>
+                <option value="red">High-Vis Red</option>
+                <option value="orange">Neon Orange</option>
+                <option value="black">Matte Black</option>
+                <option value="yellow">Yellow</option>
               </select>
             </div>
-            <div>
-              <label class="text-[10px] text-slate-400">Rail Angle</label>
-              <div class="flex items-center gap-1">
-                <input type="number" id="rail-angle" value="0" min="0" max="20" class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono">
-                <span class="text-slate-400 text-xs">°</span>
-              </div>
-            </div>
           </div>
-          <div class="pt-1">
-            <label class="text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Rail Heading (Azimuth)</span>
-              <span id="rail-heading-val" class="text-sky-400 font-mono">0° (North)</span>
-            </label>
-            <input type="range" id="rail-heading" min="0" max="360" value="0" class="w-full accent-sky-500">
-          </div>
+          <button id="btn-save-part" class="w-full py-1.5 bg-sky-600 hover:bg-sky-500 rounded text-white font-semibold">
+            Apply Changes
+          </button>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 2: LAUNCH PAD, SITES & LIVE WEATHER SETUP VIEW -->
+    <!-- ======================================================== -->
+    <div id="view-environment" class="hidden flex-1 overflow-y-auto p-6 bg-slate-950 flex flex-col items-center">
+      <div class="max-w-4xl w-full space-y-6">
+        
+        <div>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <i data-lucide="map-pin" class="w-5 h-5 text-sky-400"></i> Step 2: Launch Site & Atmospheric Weather
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">Configure global launch conditions and pull real-time weather via satellite telemetry.</p>
         </div>
 
-        <!-- Active Motor & Delay -->
-        <div class="glass-panel p-3 rounded-lg border border-slate-800 space-y-2">
-          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-            <i data-lucide="flame" class="w-3.5 h-3.5 text-accent-orange"></i> Propulsion & Motor
-          </span>
-          <div class="space-y-1">
-            <label class="text-[10px] text-slate-400">Motor Designation</label>
-            <select id="sim-motor-select" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200 font-mono">
-              <option value="I280DM" selected>AeroTech I280DM (370 Ns, 38mm)</option>
-              <option value="H128W">AeroTech H128W (198 Ns, 29mm)</option>
-              <option value="H180W">AeroTech H180W (240 Ns, 29mm)</option>
-              <option value="I350CS">Cesaroni I350CS (398 Ns, 38mm)</option>
-              <option value="J350W">AeroTech J350W (720 Ns - Level 2)</option>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          <!-- Launch Site Card -->
+          <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <i data-lucide="globe" class="w-4 h-4 text-brand-500"></i> Select Launch Site
+              </span>
+              <span id="site-coords" class="text-xs text-slate-500 font-mono">40.78° N, 119.20° W</span>
+            </div>
+
+            <select id="launch-site-select" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-sans">
+              <option value="black-rock" selected>Black Rock Desert, NV (BALLS / Tripoli)</option>
+              <option value="spaceport-am">Spaceport America, NM (Spaceport Cup)</option>
+              <option value="lucerne">Lucerne Valley, CA (ROC / ROCstock)</option>
+              <option value="argonia">Argonia, KS (Rocket City / LDRS)</option>
+              <option value="manchester">Manchester, TN (Music City Missile)</option>
+              <option value="kourou">Guiana Space Centre, Kourou (CSG)</option>
+              <option value="woomera">Woomera Test Range, Australia</option>
+              <option value="custom">Custom GPS Coordinates...</option>
             </select>
-          </div>
-          <div class="grid grid-cols-2 gap-2 text-xs pt-1">
-            <div>
-              <label class="text-[10px] text-slate-400">Drilled Delay (s)</label>
-              <input type="number" id="sim-delay" value="10.0" step="1" class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono">
+
+            <div id="custom-coords-row" class="hidden grid-cols-2 gap-2">
+              <input type="number" id="custom-lat" placeholder="Latitude (°)" step="0.0001" class="bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200">
+              <input type="number" id="custom-lon" placeholder="Longitude (°)" step="0.0001" class="bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200">
             </div>
-            <div>
-              <label class="text-[10px] text-slate-400">Motor Type</label>
-              <div class="text-slate-300 font-mono text-[11px] py-1.5">Dark Matter (Sparky)</div>
-            </div>
-          </div>
-        </div>
 
-      </div>
-
-      <!-- COMPONENT TREE / DESIGN PANEL (Alternative Tab) -->
-      <div id="panel-spec" class="hidden flex-1 overflow-y-auto p-4 space-y-3">
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span>Component Breakdown</span>
-          <button id="btn-add-comp" class="text-sky-400 hover:text-sky-300 text-[11px]">+ Add Part</button>
-        </div>
-        <div id="component-tree" class="space-y-1.5 text-xs font-mono">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-
-      <!-- STABILITY & AIRFRAME METRICS FOOTER -->
-      <div class="p-3 bg-slate-950 border-t border-slate-800 text-xs font-mono space-y-1.5">
-        <div class="flex justify-between items-center">
-          <span class="text-slate-400">Stability Margin:</span>
-          <span id="metric-stability" class="font-bold text-emerald-400">1.82 cal (Stable)</span>
-        </div>
-        <div class="flex justify-between items-center text-[11px]">
-          <span class="text-slate-500">CG: <span id="metric-cg" class="text-slate-300">1.02 m</span></span>
-          <span class="text-slate-500">CP: <span id="metric-cp" class="text-slate-300">1.21 m</span></span>
-        </div>
-        <div class="flex justify-between items-center text-[11px]">
-          <span class="text-slate-500">Total Mass:</span>
-          <span id="metric-mass" class="text-slate-300">1.85 kg (4.07 lbs)</span>
-        </div>
-      </div>
-    </aside>
-
-    <!-- CENTER 3D CANVAS & HUD -->
-    <section class="flex-1 relative flex flex-col overflow-hidden bg-slate-950">
-      
-      <!-- 3D WebGL Canvas Container -->
-      <div id="canvas-container" class="w-full h-full relative cursor-grab active:cursor-grabbing"></div>
-
-      <!-- HUD: REAL-TIME FLIGHT METRICS OVERLAY -->
-      <div class="hud-overlay absolute inset-0 p-4 flex flex-col justify-between pointer-events-none">
-        
-        <!-- Top HUD Strip -->
-        <div class="flex items-start justify-between">
-          <div class="hud-interactive glass-panel px-3 py-2 rounded-lg border border-slate-800/80 flex items-center gap-4 text-xs font-mono">
-            <div>
-              <span class="text-[10px] text-slate-400 block uppercase">Altitude</span>
-              <span id="hud-alt" class="text-lg font-bold text-sky-400">0</span> <span class="text-slate-400 text-xs">ft</span>
-            </div>
-            <div class="border-l border-slate-700 pl-4">
-              <span class="text-[10px] text-slate-400 block uppercase">Velocity</span>
-              <span id="hud-vel" class="text-lg font-bold text-emerald-400">0</span> <span class="text-slate-400 text-xs">mph</span>
-            </div>
-            <div class="border-l border-slate-700 pl-4">
-              <span class="text-[10px] text-slate-400 block uppercase">Acceleration</span>
-              <span id="hud-acc" class="text-lg font-bold text-amber-400">0.0</span> <span class="text-slate-400 text-xs">G</span>
-            </div>
-            <div class="border-l border-slate-700 pl-4">
-              <span class="text-[10px] text-slate-400 block uppercase">Flight Time</span>
-              <span id="hud-time" class="text-lg font-bold text-purple-400">T+ 0.00s</span>
-            </div>
-          </div>
-
-          <!-- Camera Views Selector -->
-          <div class="hud-interactive glass-panel p-1.5 rounded-lg border border-slate-800 flex gap-1 text-xs">
-            <button id="cam-pad" class="px-2.5 py-1 rounded bg-sky-600 text-white font-medium hover:bg-sky-500 transition">Launch Pad</button>
-            <button id="cam-follow" class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition">Chase Cam</button>
-            <button id="cam-rocket" class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition">On-board Cam</button>
-            <button id="cam-top" class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition">Bird's Eye</button>
-          </div>
-        </div>
-
-        <!-- Real-time Flight Phase Indicator & Warnings Alert Box -->
-        <div class="flex items-end justify-between">
-          <div class="hud-interactive max-w-md space-y-2">
-            <!-- Warnings Box -->
-            <div id="hud-warnings-box" class="glass-panel p-3 rounded-lg border border-amber-500/30 bg-amber-950/20 text-xs hidden">
-              <div class="flex items-center gap-1.5 text-amber-400 font-semibold mb-1">
-                <i data-lucide="alert-triangle" class="w-4 h-4"></i> Safety Warnings Detected
+            <!-- Launch Rail Setup -->
+            <div class="border-t border-slate-800 pt-3 space-y-3">
+              <span class="text-xs font-semibold text-slate-300 block">Launch Rail & Standoff</span>
+              <div class="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label class="text-[10px] text-slate-400">Rail Type / Length</label>
+                  <select id="rail-length" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200">
+                    <option value="1.83">6 ft 1010 Rail</option>
+                    <option value="2.44" selected>8 ft 1010 Rail</option>
+                    <option value="3.66">12 ft 1010 Rail</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[10px] text-slate-400">Rail Angle</label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="rail-angle" value="0" min="0" max="20" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200 font-mono">
+                    <span class="text-slate-400 text-xs">°</span>
+                  </div>
+                </div>
               </div>
-              <ul id="hud-warnings-list" class="text-[11px] text-slate-300 space-y-1 list-disc list-inside">
-                <!-- Injected via simulation checks -->
-              </ul>
-            </div>
-
-            <!-- Flight Phase Badge -->
-            <div class="glass-panel px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2">
-              <div id="phase-pulse" class="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
-              <span id="hud-flight-phase" class="text-xs font-mono font-bold text-slate-300 uppercase tracking-wide">Ready on Pad</span>
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-[10px] text-slate-400">Rail Azimuth (Heading)</span>
+                  <span id="rail-heading-val" class="text-sky-400 font-mono text-[11px]">0° (North)</span>
+                </div>
+                <input type="range" id="rail-heading" min="0" max="360" value="0" class="w-full accent-sky-500">
+              </div>
             </div>
           </div>
 
-          <!-- Playback Controls -->
-          <div class="hud-interactive glass-panel p-2 rounded-xl border border-slate-800 flex items-center gap-2 shadow-2xl">
-            <button id="btn-sim-reset" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition" title="Reset Flight">
-              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-            </button>
-            <button id="btn-sim-play" class="px-4 py-2 bg-gradient-to-r from-brand-600 to-sky-500 hover:from-brand-500 hover:to-sky-400 rounded-lg text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-sky-500/25 transition">
-              <i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH
-            </button>
-            <div class="flex items-center gap-1.5 px-2 font-mono text-xs text-slate-400">
-              <span>Speed:</span>
-              <button id="btn-speed-1x" class="px-1.5 py-0.5 rounded bg-slate-800 text-sky-400 font-bold">1x</button>
-              <button id="btn-speed-2x" class="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-400">2x</button>
-              <button id="btn-speed-5x" class="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-400">5x</button>
+          <!-- Weather Card -->
+          <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <i data-lucide="cloud-lightning" class="w-4 h-4 text-amber-400"></i> Atmospheric Conditions
+              </span>
+              <button id="btn-fetch-live-weather" class="text-xs bg-sky-950 text-sky-400 border border-sky-800 hover:bg-sky-900 px-3 py-1 rounded-md flex items-center gap-1.5 font-mono transition">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Live Weather
+              </button>
             </div>
+
+            <!-- Date/Time Picker -->
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase font-mono">Launch Date</label>
+                <input type="date" id="sim-date" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase font-mono">Launch Time</label>
+                <input type="time" id="sim-time" value="10:00" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200">
+              </div>
+            </div>
+
+            <!-- Weather Inputs -->
+            <div class="grid grid-cols-2 gap-3 font-mono text-xs">
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="wind" class="w-3 h-3 text-sky-400"></i> Wind Speed</div>
+                <div class="flex items-baseline gap-1 mt-1">
+                  <input type="number" id="weather-wind-speed" value="6.5" step="0.5" class="w-16 bg-transparent font-bold text-white text-base focus:outline-none">
+                  <span class="text-slate-400">mph</span>
+                </div>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="compass" class="w-3 h-3 text-emerald-400"></i> Wind Dir</div>
+                <div class="flex items-baseline gap-1 mt-1">
+                  <input type="number" id="weather-wind-dir" value="240" step="5" class="w-16 bg-transparent font-bold text-white text-base focus:outline-none">
+                  <span class="text-slate-400">° (WSW)</span>
+                </div>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="thermometer" class="w-3 h-3 text-amber-400"></i> Temp</div>
+                <div class="flex items-baseline gap-1 mt-1">
+                  <input type="number" id="weather-temp" value="72" step="1" class="w-16 bg-transparent font-bold text-white text-base focus:outline-none">
+                  <span class="text-slate-400">°F</span>
+                </div>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-slate-400 flex items-center gap-1"><i data-lucide="gauge" class="w-3 h-3 text-purple-400"></i> Pressure</div>
+                <div class="flex items-baseline gap-1 mt-1">
+                  <input type="number" id="weather-pressure" value="1013" step="1" class="w-16 bg-transparent font-bold text-white text-base focus:outline-none">
+                  <span class="text-slate-400">mbar</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Motor & Propellant Selection -->
+            <div class="border-t border-slate-800 pt-3 space-y-2">
+              <span class="text-xs font-semibold text-slate-300 block">Motor & Propellant Type</span>
+              <div class="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label class="text-[10px] text-slate-400">Installed Motor</label>
+                  <select id="sim-motor-select" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200 font-mono">
+                    <option value="I280DM" selected>AeroTech I280DM (Dark Matter / Sparky)</option>
+                    <option value="H128W">AeroTech H128W (White Lightning)</option>
+                    <option value="H180W">AeroTech H180W (White Lightning)</option>
+                    <option value="I350CS">Cesaroni I350CS (Classic Black)</option>
+                    <option value="J350W">AeroTech J350W (White Lightning - L2)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[10px] text-slate-400">Drilled Delay (s)</label>
+                  <input type="number" id="sim-delay" value="10.0" step="1" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200 font-mono">
+                </div>
+              </div>
+            </div>
+
           </div>
+
+        </div>
+
+        <div class="flex justify-between items-center pt-2">
+          <button id="btn-back-to-design" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-2">
+            <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Rocket Designer
+          </button>
+          <button id="btn-proceed-to-sim" class="px-6 py-2.5 rounded-lg bg-gradient-to-r from-brand-600 to-sky-500 hover:from-brand-500 hover:to-sky-400 text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-sky-500/25">
+            Proceed to 3D Flight Simulation <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+          </button>
         </div>
 
       </div>
+    </div>
 
-    </section>
+    <!-- ======================================================== -->
+    <!-- VIEW 3: 3D LAUNCH SIMULATION, FLIGHT HUD & TELEMETRY -->
+    <!-- ======================================================== -->
+    <div id="view-simulation" class="hidden flex-1 flex overflow-hidden relative">
+      
+      <!-- 3D Flight Canvas -->
+      <section class="flex-1 relative flex flex-col overflow-hidden bg-slate-950">
+        <div id="canvas-container" class="w-full h-full relative cursor-grab active:cursor-grabbing"></div>
 
-    <!-- RIGHT TELEMETRY & STATS DRAWER (Collapsible) -->
-    <aside id="telemetry-drawer" class="w-96 border-l border-slate-800 bg-slate-900/95 flex flex-col shrink-0 z-20 transition-all duration-300">
-      <div class="h-10 border-b border-slate-800 px-4 flex items-center justify-between text-xs font-semibold text-slate-300">
-        <span class="flex items-center gap-1.5"><i data-lucide="bar-chart-2" class="w-3.5 h-3.5 text-sky-400"></i> Simulation Summary</span>
-        <span class="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 border border-emerald-800/80 px-1.5 py-0.5 rounded">6-DOF RK4</span>
-      </div>
+        <!-- HUD: Live Flight Telemetry Overlay -->
+        <div class="hud-overlay absolute inset-0 p-4 flex flex-col justify-between pointer-events-none">
+          
+          <!-- Top HUD Strip -->
+          <div class="flex items-start justify-between">
+            <div class="hud-interactive glass-panel px-3 py-2 rounded-lg border border-slate-800/80 flex items-center gap-4 text-xs font-mono">
+              <div>
+                <span class="text-[10px] text-slate-400 block uppercase">Altitude</span>
+                <span id="hud-alt" class="text-lg font-bold text-sky-400">0</span> <span class="text-slate-400 text-xs">ft</span>
+              </div>
+              <div class="border-l border-slate-700 pl-4">
+                <span class="text-[10px] text-slate-400 block uppercase">Velocity</span>
+                <span id="hud-vel" class="text-lg font-bold text-emerald-400">0</span> <span class="text-slate-400 text-xs">mph</span>
+              </div>
+              <div class="border-l border-slate-700 pl-4">
+                <span class="text-[10px] text-slate-400 block uppercase">Acceleration</span>
+                <span id="hud-acc" class="text-lg font-bold text-amber-400">0.0</span> <span class="text-slate-400 text-xs">G</span>
+              </div>
+              <div class="border-l border-slate-700 pl-4">
+                <span class="text-[10px] text-slate-400 block uppercase">Flight Time</span>
+                <span id="hud-time" class="text-lg font-bold text-purple-400">T+ 0.00s</span>
+              </div>
+            </div>
 
-      <div class="flex-1 overflow-y-auto p-4 space-y-4">
-        
-        <!-- Scorecard Metrics -->
-        <div class="grid grid-cols-2 gap-2 text-xs font-mono">
-          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-500 block uppercase">Apogee (Peak)</span>
-            <span id="stat-apogee" class="text-base font-bold text-sky-400">3,516 ft</span>
-            <span id="stat-apogee-m" class="text-[10px] text-slate-500 block">1,072 m</span>
+            <!-- Multi-Angle Camera Controls -->
+            <div class="hud-interactive glass-panel p-1.5 rounded-lg border border-slate-800 flex gap-1 text-xs">
+              <button id="cam-pad" class="px-2.5 py-1 rounded bg-sky-600 text-white font-medium hover:bg-sky-500 transition">Launch Pad</button>
+              <button id="cam-follow" class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition">Chase Cam</button>
+              <button id="cam-rocket" class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition">On-board</button>
+              <button id="cam-top" class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition">Bird's Eye</button>
+            </div>
           </div>
-          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-500 block uppercase">Max Velocity</span>
-            <span id="stat-max-vel" class="text-base font-bold text-emerald-400">568 mph</span>
-            <span id="stat-mach" class="text-[10px] text-slate-500 block">Mach 0.74</span>
+
+          <!-- Bottom HUD Strip: Flight Phase & Warnings -->
+          <div class="flex items-end justify-between">
+            <div class="hud-interactive max-w-md space-y-2">
+              <div id="hud-warnings-box" class="glass-panel p-3 rounded-lg border border-amber-500/30 bg-amber-950/20 text-xs hidden">
+                <div class="flex items-center gap-1.5 text-amber-400 font-semibold mb-1">
+                  <i data-lucide="alert-triangle" class="w-4 h-4"></i> Safety Warnings Detected
+                </div>
+                <ul id="hud-warnings-list" class="text-[11px] text-slate-300 space-y-1 list-disc list-inside"></ul>
+              </div>
+
+              <div class="glass-panel px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2">
+                <div id="phase-pulse" class="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+                <span id="hud-flight-phase" class="text-xs font-mono font-bold text-slate-300 uppercase tracking-wide">Ready on Pad</span>
+              </div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="hud-interactive glass-panel p-2 rounded-xl border border-slate-800 flex items-center gap-2 shadow-2xl">
+              <button id="btn-sim-reset" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition" title="Reset Flight">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+              </button>
+              <button id="btn-sim-play" class="px-5 py-2 bg-gradient-to-r from-brand-600 to-sky-500 hover:from-brand-500 hover:to-sky-400 rounded-lg text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-sky-500/25 transition">
+                <i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH
+              </button>
+              <div class="flex items-center gap-1.5 px-2 font-mono text-xs text-slate-400">
+                <span>Speed:</span>
+                <button id="btn-speed-1x" class="px-1.5 py-0.5 rounded bg-slate-800 text-sky-400 font-bold">1x</button>
+                <button id="btn-speed-2x" class="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-400">2x</button>
+                <button id="btn-speed-5x" class="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-400">5x</button>
+              </div>
+            </div>
           </div>
-          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-500 block uppercase">Optimum Delay</span>
-            <span id="stat-opt-delay" class="text-base font-bold text-amber-400">10.47 s</span>
-            <span class="text-[10px] text-slate-500 block">Burnout: 1.35s</span>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-500 block uppercase">Deploy Speed</span>
-            <span id="stat-deploy-vel" class="text-base font-bold text-emerald-400">14.9 ft/s</span>
-            <span class="text-[10px] text-emerald-500/80 block">Safe (< 20 ft/s)</span>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-500 block uppercase">Max Acceleration</span>
-            <span id="stat-max-acc" class="text-base font-bold text-purple-400">14.8 G</span>
-            <span class="text-[10px] text-slate-500 block">Liftoff thrust</span>
-          </div>
-          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-500 block uppercase">Touchdown Speed</span>
-            <span id="stat-landing-vel" class="text-base font-bold text-sky-400">22.4 ft/s</span>
-            <span class="text-[10px] text-slate-500 block">Parachute decent</span>
-          </div>
+
+        </div>
+      </section>
+
+      <!-- Right Telemetry & Scorecard Drawer -->
+      <aside class="w-96 border-l border-slate-800 bg-slate-900/95 flex flex-col shrink-0">
+        <div class="h-10 border-b border-slate-800 px-4 flex items-center justify-between text-xs font-semibold text-slate-300">
+          <span class="flex items-center gap-1.5"><i data-lucide="bar-chart-2" class="w-3.5 h-3.5 text-sky-400"></i> Simulation Summary</span>
+          <span class="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 border border-emerald-800/80 px-1.5 py-0.5 rounded">6-DOF RK4</span>
         </div>
 
-        <!-- Telemetry Graphs -->
-        <div class="space-y-3">
-          <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
-            <div class="flex justify-between items-center mb-2">
-              <span class="text-[11px] font-semibold text-slate-300">Altitude vs. Time</span>
-              <span class="text-[10px] text-slate-500 font-mono">ft / s</span>
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase">Apogee (Peak)</span>
+              <span id="stat-apogee" class="text-base font-bold text-sky-400">3,516 ft</span>
+              <span id="stat-apogee-m" class="text-[10px] text-slate-500 block">1,072 m</span>
             </div>
-            <div class="h-32">
-              <canvas id="chart-altitude"></canvas>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase">Max Velocity</span>
+              <span id="stat-max-vel" class="text-base font-bold text-emerald-400">568 mph</span>
+              <span id="stat-mach" class="text-[10px] text-slate-500 block">Mach 0.74</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase">Optimum Delay</span>
+              <span id="stat-opt-delay" class="text-base font-bold text-amber-400">10.47 s</span>
+              <span class="text-[10px] text-slate-500 block">Burnout: 1.35s</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-500 block uppercase">Deploy Speed</span>
+              <span id="stat-deploy-vel" class="text-base font-bold text-emerald-400">14.9 ft/s</span>
+              <span class="text-[10px] text-emerald-500/80 block">Safe (&lt; 20 ft/s)</span>
             </div>
           </div>
 
-          <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
-            <div class="flex justify-between items-center mb-2">
-              <span class="text-[11px] font-semibold text-slate-300">Velocity & Thrust vs. Time</span>
-              <span class="text-[10px] text-slate-500 font-mono">mph / N</span>
+          <!-- Charts -->
+          <div class="space-y-3">
+            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-[11px] font-semibold text-slate-300">Altitude vs. Time</span>
+                <span class="text-[10px] text-slate-500 font-mono">ft / s</span>
+              </div>
+              <div class="h-32"><canvas id="chart-altitude"></canvas></div>
             </div>
-            <div class="h-32">
-              <canvas id="chart-velocity"></canvas>
+
+            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-[11px] font-semibold text-slate-300">Velocity & Thrust vs. Time</span>
+                <span class="text-[10px] text-slate-500 font-mono">mph / N</span>
+              </div>
+              <div class="h-32"><canvas id="chart-velocity"></canvas></div>
             </div>
           </div>
+
+          <!-- Tripoli Checklist -->
+          <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 text-xs">
+            <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+              <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i> Tripoli L1 Checklist Review
+            </span>
+            <div class="space-y-1.5 text-[11px]">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Impulse Class:</span>
+                <span class="font-mono text-emerald-400">I (370 Ns) - Valid L1</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Min. Standoff:</span>
+                <span class="font-mono text-amber-400">200 ft (Sparky rule)</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Rail Exit Speed:</span>
+                <span class="font-mono text-emerald-400">62.4 ft/s (&gt; 45 ft/s safe)</span>
+              </div>
+            </div>
+          </div>
+
         </div>
+      </aside>
 
-        <!-- Tripoli / RSO Compliance Report -->
-        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 text-xs">
-          <span class="font-semibold text-slate-200 flex items-center gap-1.5">
-            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i> Tripoli L1 Checklist Review
-          </span>
-          <div class="space-y-1.5 text-[11px]">
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Impulse Class:</span>
-              <span class="font-mono text-emerald-400">I (370 Ns) - Valid L1</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Min. Standoff Distance:</span>
-              <span class="font-mono text-amber-400">200 ft (Sparky rule)</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Rail Exit Velocity:</span>
-              <span class="font-mono text-emerald-400">62.4 ft/s (> 45 ft/s safe)</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Descent Drift Radius:</span>
-              <span class="font-mono text-slate-300">~680 ft (at 6.5 mph wind)</span>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </aside>
+    </div>
 
   </main>
 
@@ -478,7 +533,6 @@
   <script src="js/app.js"></script>
 
   <script>
-    // Initialize icons
     lucide.createIcons();
   </script>
 </body>

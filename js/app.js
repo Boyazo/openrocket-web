@@ -1,23 +1,71 @@
 /**
- * Main Application Controller
- * Coordinates UI, file imports, weather API, 6-DOF simulation, and 3D rendering.
+ * Main Application Orchestrator:
+ * Manages 3-Step Sequential Workflow:
+ *  Step 1: 3D Rocket Designer & Component Config (Add/Edit parts, live Barrowman CG/CP)
+ *  Step 2: Launch Site, Rail Standoff & Live Satellite Weather Setup
+ *  Step 3: 3D Flight Simulation, Camera Modes, Propellant FX & Telemetry Graphs
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Initialize Services
+  // 1. Initialize Services
   const parser = new OpenRocketParser();
   const weatherService = new WeatherService();
-  const visualizer = new Rocket3DVisualizer("canvas-container");
+  
+  // Dual 3D Renderers: Studio for CAD/Design, World for 3D Launch Flight
+  const designVisualizer = new Rocket3DVisualizer("design-canvas-container", true);
+  const flightVisualizer = new Rocket3DVisualizer("canvas-container", false);
 
   let currentSimulation = null;
   let chartAltitude = null;
   let chartVelocity = null;
+  let selectedComponentIndex = 0;
 
-  // DOM Elements
-  const orkFileInput = document.getElementById("ork-file-input");
-  const btnQuickSample = document.getElementById("btn-quick-sample");
-  const btnExportOrk = document.getElementById("btn-export-ork");
-  const activeRocketName = document.getElementById("active-rocket-name");
+  // Active Rocket State
+  let activeRocket = {
+    name: "Apogee Zephyr (L1 Build)",
+    components: [
+      { id: "nose-1", type: "nosecone", name: "Ogive Nose Cone", length: 0.503, radius: 0.051, color: "red" },
+      { id: "tube-1", type: "bodytube", name: "Upper Body Tube (Payload)", length: 0.457, radius: 0.051, color: "white" },
+      { id: "tube-2", type: "bodytube", name: "Lower Body Tube (Booster)", length: 0.457, radius: 0.051, color: "white" },
+      { id: "fins-1", type: "fins", name: "Zephyr TTW Plywood Fins", count: 3, rootChord: 0.22, span: 0.125, tipChord: 0.09, sweepLength: 0.13, color: "black" }
+    ],
+    motor: {
+      designation: "I280DM",
+      delay: 10.0
+    },
+    diameter: 0.102,
+    length: 1.417,
+    dryMass: 1.50,
+    totalMass: 1.854
+  };
+
+  // Workflow Stage Views
+  const viewDesigner = document.getElementById("view-designer");
+  const viewEnvironment = document.getElementById("view-environment");
+  const viewSimulation = document.getElementById("view-simulation");
+
+  const stepBtn1 = document.getElementById("workflow-step-1");
+  const stepBtn2 = document.getElementById("workflow-step-2");
+  const stepBtn3 = document.getElementById("workflow-step-3");
+
+  const btnProceedToEnv = document.getElementById("btn-proceed-to-env");
+  const btnBackToDesign = document.getElementById("btn-back-to-design");
+  const btnProceedToSim = document.getElementById("btn-proceed-to-sim");
+
+  // Parts List & Properties
+  const designerPartsList = document.getElementById("designer-parts-list");
+  const partPropertiesCard = document.getElementById("part-properties-card");
+  const propPartName = document.getElementById("prop-part-name");
+  const propPartType = document.getElementById("prop-part-type");
+  const propLenIn = document.getElementById("prop-len-in");
+  const propDiaIn = document.getElementById("prop-dia-in");
+  const propColor = document.getElementById("prop-color");
+  const btnSavePart = document.getElementById("btn-save-part");
+
+  // Add Part Buttons
+  const btnAddNose = document.getElementById("btn-add-nose");
+  const btnAddTube = document.getElementById("btn-add-tube");
+  const btnAddFins = document.getElementById("btn-add-fins");
 
   // Environmental inputs
   const launchSiteSelect = document.getElementById("launch-site-select");
@@ -29,7 +77,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const weatherTemp = document.getElementById("weather-temp");
   const weatherPressure = document.getElementById("weather-pressure");
 
-  // Rail & Motor inputs
   const railLength = document.getElementById("rail-length");
   const railAngle = document.getElementById("rail-angle");
   const railHeading = document.getElementById("rail-heading");
@@ -37,7 +84,28 @@ document.addEventListener("DOMContentLoaded", () => {
   const simMotorSelect = document.getElementById("sim-motor-select");
   const simDelay = document.getElementById("sim-delay");
 
-  // Telemetry HUD Elements
+  // Flight Controls
+  const btnSimPlay = document.getElementById("btn-sim-play");
+  const btnSimReset = document.getElementById("btn-sim-reset");
+  const btnSpeed1x = document.getElementById("btn-speed-1x");
+  const btnSpeed2x = document.getElementById("btn-speed-2x");
+  const btnSpeed5x = document.getElementById("btn-speed-5x");
+
+  // Camera angles
+  const camPad = document.getElementById("cam-pad");
+  const camFollow = document.getElementById("cam-follow");
+  const camRocket = document.getElementById("cam-rocket");
+  const camTop = document.getElementById("cam-top");
+
+  // Scorecard stats
+  const statApogee = document.getElementById("stat-apogee");
+  const statApogeeM = document.getElementById("stat-apogee-m");
+  const statMaxVel = document.getElementById("stat-max-vel");
+  const statMach = document.getElementById("stat-mach");
+  const statOptDelay = document.getElementById("stat-opt-delay");
+  const statDeployVel = document.getElementById("stat-deploy-vel");
+
+  // HUD
   const hudAlt = document.getElementById("hud-alt");
   const hudVel = document.getElementById("hud-vel");
   const hudAcc = document.getElementById("hud-acc");
@@ -47,103 +115,194 @@ document.addEventListener("DOMContentLoaded", () => {
   const hudWarningsBox = document.getElementById("hud-warnings-box");
   const hudWarningsList = document.getElementById("hud-warnings-list");
 
-  // Sim Playback Controls
-  const btnSimPlay = document.getElementById("btn-sim-play");
-  const btnSimReset = document.getElementById("btn-sim-reset");
-  const btnSpeed1x = document.getElementById("btn-speed-1x");
-  const btnSpeed2x = document.getElementById("btn-speed-2x");
-  const btnSpeed5x = document.getElementById("btn-speed-5x");
+  // Navigation & Export
+  const orkFileInput = document.getElementById("ork-file-input");
+  const btnExportOrk = document.getElementById("btn-export-ork");
+  const btnQuickSample = document.getElementById("btn-quick-sample");
+  const activeRocketName = document.getElementById("active-rocket-name");
 
-  // Camera buttons
-  const camPad = document.getElementById("cam-pad");
-  const camFollow = document.getElementById("cam-follow");
-  const camRocket = document.getElementById("cam-rocket");
-  const camTop = document.getElementById("cam-top");
+  // Set today's date
+  document.getElementById("sim-date").value = new Date().toISOString().split("T")[0];
 
-  // Stats Scorecard
-  const statApogee = document.getElementById("stat-apogee");
-  const statApogeeM = document.getElementById("stat-apogee-m");
-  const statMaxVel = document.getElementById("stat-max-vel");
-  const statMach = document.getElementById("stat-mach");
-  const statOptDelay = document.getElementById("stat-opt-delay");
-  const statDeployVel = document.getElementById("stat-deploy-vel");
-  const statMaxAcc = document.getElementById("stat-max-acc");
-  const statLandingVel = document.getElementById("stat-landing-vel");
+  // -------------------------------------------------------------
+  // 1. WORKFLOW STEP SWITCHING LOGIC (DESIGN -> PAD -> LAUNCH)
+  // -------------------------------------------------------------
+  function switchWorkflowStep(stepNumber) {
+    [viewDesigner, viewEnvironment, viewSimulation].forEach(v => v.classList.add("hidden"));
+    [stepBtn1, stepBtn2, stepBtn3].forEach(b => {
+      b.classList.remove("bg-brand-600", "text-white", "shadow");
+      b.classList.add("text-slate-400");
+    });
 
-  // Metrics
-  const metricStability = document.getElementById("metric-stability");
-  const metricCg = document.getElementById("metric-cg");
-  const metricCp = document.getElementById("metric-cp");
-  const metricMass = document.getElementById("metric-mass");
-
-  // Set today's date in picker
-  const today = new Date().toISOString().split("T")[0];
-  document.getElementById("sim-date").value = today;
-
-  // Initialize Telemetry Charts
-  initCharts();
-
-  // Load initial Zephyr model & run simulation
-  loadZephyrDefault();
-
-  // 1. Handle .ork File Import
-  orkFileInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    try {
-      activeRocketName.textContent = `Loading ${file.name}...`;
-      const buffer = await file.arrayBuffer();
-      const parsedRocket = await parser.parseOrkFile(buffer);
-      
-      activeRocketName.textContent = parsedRocket.name;
-      updateRocketUI(parsedRocket);
-      runSimulation();
-    } catch (err) {
-      alert("Error parsing OpenRocket file: " + err.message);
-      console.error(err);
+    if (stepNumber === 1) {
+      viewDesigner.classList.remove("hidden");
+      stepBtn1.classList.add("bg-brand-600", "text-white", "shadow");
+      stepBtn1.classList.remove("text-slate-400");
+      setTimeout(() => designVisualizer.onWindowResize(), 50);
+    } else if (stepNumber === 2) {
+      viewEnvironment.classList.remove("hidden");
+      stepBtn2.classList.add("bg-brand-600", "text-white", "shadow");
+      stepBtn2.classList.remove("text-slate-400");
+    } else if (stepNumber === 3) {
+      viewSimulation.classList.remove("hidden");
+      stepBtn3.classList.add("bg-brand-600", "text-white", "shadow");
+      stepBtn3.classList.remove("text-slate-400");
+      setTimeout(() => flightVisualizer.onWindowResize(), 50);
+      runSimulation(); // auto-simulate flight
     }
+  }
+
+  stepBtn1.addEventListener("click", () => switchWorkflowStep(1));
+  stepBtn2.addEventListener("click", () => switchWorkflowStep(2));
+  stepBtn3.addEventListener("click", () => switchWorkflowStep(3));
+
+  btnProceedToEnv.addEventListener("click", () => switchWorkflowStep(2));
+  btnBackToDesign.addEventListener("click", () => switchWorkflowStep(1));
+  btnProceedToSim.addEventListener("click", () => switchWorkflowStep(3));
+
+  // -------------------------------------------------------------
+  // 2. COMPONENT LIST & DESIGNER LOGIC
+  // -------------------------------------------------------------
+  function renderComponentTree() {
+    designerPartsList.innerHTML = "";
+    activeRocket.components.forEach((comp, idx) => {
+      const card = document.createElement("div");
+      card.className = `p-2.5 rounded-lg border cursor-pointer transition flex items-center justify-between ${
+        idx === selectedComponentIndex
+          ? "bg-sky-950/60 border-sky-500 shadow-sm"
+          : "bg-slate-950/50 border-slate-800 hover:border-slate-700"
+      }`;
+
+      const icon = comp.type === "nosecone" ? "cone" : (comp.type === "fins" ? "triangle" : "cylinder");
+      const lenIn = ((comp.length || 0.457) * 39.3701).toFixed(1);
+      const diaIn = ((comp.radius || 0.051) * 2 * 39.3701).toFixed(1);
+
+      card.innerHTML = `
+        <div class="flex items-center gap-2">
+          <i data-lucide="${icon}" class="w-4 h-4 text-sky-400"></i>
+          <div>
+            <div class="font-bold text-xs text-slate-200">${comp.name}</div>
+            <div class="text-[10px] text-slate-400 font-mono">Len: ${lenIn}" | Dia: ${diaIn}"</div>
+          </div>
+        </div>
+        <button class="text-rose-400 hover:text-rose-300 p-1 text-xs" data-delete="${idx}" title="Delete component">✕</button>
+      `;
+
+      card.addEventListener("click", (e) => {
+        if (e.target.dataset.delete !== undefined) return;
+        selectedComponentIndex = idx;
+        renderComponentTree();
+        populatePartProperties(comp);
+      });
+
+      const delBtn = card.querySelector(`[data-delete="${idx}"]`);
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (activeRocket.components.length <= 1) {
+          alert("A rocket must have at least one component!");
+          return;
+        }
+        activeRocket.components.splice(idx, 1);
+        selectedComponentIndex = Math.max(0, idx - 1);
+        recalculateAndRender();
+      });
+
+      designerPartsList.appendChild(card);
+    });
+
+    lucide.createIcons();
+    if (activeRocket.components[selectedComponentIndex]) {
+      populatePartProperties(activeRocket.components[selectedComponentIndex]);
+    }
+  }
+
+  function populatePartProperties(comp) {
+    propPartName.textContent = comp.name;
+    propPartType.textContent = comp.type;
+    propLenIn.value = ((comp.length || 0.457) * 39.3701).toFixed(1);
+    propDiaIn.value = ((comp.radius || 0.051) * 2 * 39.3701).toFixed(1);
+    propColor.value = comp.color || "white";
+  }
+
+  btnSavePart.addEventListener("click", () => {
+    const comp = activeRocket.components[selectedComponentIndex];
+    if (!comp) return;
+
+    comp.length = parseFloat(propLenIn.value) / 39.3701;
+    comp.radius = (parseFloat(propDiaIn.value) / 2) / 39.3701;
+    comp.color = propColor.value;
+
+    recalculateAndRender();
   });
 
-  // 2. Load Sample Zephyr
-  btnQuickSample.addEventListener("click", () => {
-    loadZephyrDefault();
+  // Adding Parts
+  btnAddNose.addEventListener("click", () => {
+    activeRocket.components.unshift({
+      id: "nose-" + Date.now(),
+      type: "nosecone",
+      name: "New Nose Cone",
+      length: 0.4,
+      radius: 0.051,
+      color: "red"
+    });
+    selectedComponentIndex = 0;
+    recalculateAndRender();
   });
 
-  function loadZephyrDefault() {
-    activeRocketName.textContent = "Apogee Zephyr (Tripoli L1 Setup)";
-    const rocket = {
-      name: "Apogee Zephyr",
-      components: [
-        { type: "nosecone", name: "Ogive Nose Cone", length: 0.503, radius: 0.051 },
-        { type: "bodytube", name: "Upper Body Tube (Payload)", length: 0.457, radius: 0.051 },
-        { type: "bodytube", name: "Lower Body Tube (Booster)", length: 0.457, radius: 0.051 },
-        { type: "fins", name: "Zephyr TTW Plywood Fins", count: 3, rootChord: 0.22, tipChord: 0.09, span: 0.125, sweepLength: 0.13 }
-      ],
-      motor: {
-        designation: simMotorSelect.value,
-        delay: parseFloat(simDelay.value)
-      },
-      length: 1.417,
-      diameter: 0.102,
-      dryMass: 1.50,
-      totalMass: 1.854
-    };
-    parser.rocket = rocket;
+  btnAddTube.addEventListener("click", () => {
+    activeRocket.components.push({
+      id: "tube-" + Date.now(),
+      type: "bodytube",
+      name: `Body Tube Section`,
+      length: 0.4,
+      radius: 0.051,
+      color: "white"
+    });
+    selectedComponentIndex = activeRocket.components.length - 1;
+    recalculateAndRender();
+  });
+
+  btnAddFins.addEventListener("click", () => {
+    activeRocket.components.push({
+      id: "fins-" + Date.now(),
+      type: "fins",
+      name: `Trapezoid Fin Set`,
+      count: 3,
+      rootChord: 0.20,
+      span: 0.12,
+      tipChord: 0.08,
+      sweepLength: 0.12,
+      color: "black"
+    });
+    selectedComponentIndex = activeRocket.components.length - 1;
+    recalculateAndRender();
+  });
+
+  function recalculateAndRender() {
+    parser.rocket = activeRocket;
     parser.calculateBarrowmanStability();
-    updateRocketUI(parser.rocket);
-    runSimulation();
+
+    // Total length
+    let totalLen = 0;
+    activeRocket.components.forEach(c => {
+      if (c.type === "nosecone" || c.type === "bodytube") totalLen += c.length;
+    });
+    activeRocket.length = totalLen;
+
+    // Update Designer Metrics
+    document.getElementById("designer-stability").textContent = `${activeRocket.stabilityCalibers || 1.82} cal (Stable)`;
+    document.getElementById("designer-cg").textContent = `${(activeRocket.cg || 1.02).toFixed(2)} m`;
+    document.getElementById("designer-cp").textContent = `${(activeRocket.cp || 1.21).toFixed(2)} m`;
+    document.getElementById("designer-len").textContent = `${(totalLen * 39.3701).toFixed(1)} in (${totalLen.toFixed(2)}m)`;
+
+    renderComponentTree();
+    designVisualizer.buildRocketModel(activeRocket);
+    flightVisualizer.buildRocketModel(activeRocket);
   }
 
-  function updateRocketUI(rocket) {
-    metricStability.textContent = `${rocket.stabilityCalibers || 1.82} cal (Stable)`;
-    metricCg.textContent = `${rocket.cg || 1.02} m`;
-    metricCp.textContent = `${rocket.cp || 1.21} m`;
-    metricMass.textContent = `${rocket.totalMass || 1.85} kg (${((rocket.totalMass || 1.85) * 2.20462).toFixed(2)} lbs)`;
-    visualizer.buildRocketModel(rocket);
-  }
-
-  // 3. Launch Site & Weather Sync
+  // -------------------------------------------------------------
+  // 3. LAUNCH SITE & LIVE SATELLITE WEATHER LOGIC
+  // -------------------------------------------------------------
   launchSiteSelect.addEventListener("change", async () => {
     const siteKey = launchSiteSelect.value;
     if (siteKey === "custom") {
@@ -161,7 +320,7 @@ document.addEventListener("DOMContentLoaded", () => {
   btnFetchWeather.addEventListener("click", () => syncWeather());
 
   async function syncWeather() {
-    btnFetchWeather.innerHTML = `<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Syncing...`;
+    btnFetchWeather.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> Syncing...`;
     lucide.createIcons();
 
     const siteKey = launchSiteSelect.value;
@@ -174,31 +333,24 @@ document.addEventListener("DOMContentLoaded", () => {
     weatherTemp.value = weather.tempF;
     weatherPressure.value = weather.pressureMbar;
 
-    btnFetchWeather.innerHTML = `<i data-lucide="check" class="w-3 h-3 text-emerald-400"></i> Updated`;
+    btnFetchWeather.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Synced!`;
     lucide.createIcons();
     setTimeout(() => {
-      btnFetchWeather.innerHTML = `<i data-lucide="refresh-cw" class="w-3 h-3"></i> Sync Live`;
+      btnFetchWeather.innerHTML = `<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Live Weather`;
       lucide.createIcons();
     }, 2000);
-
-    runSimulation();
   }
 
-  // Rail heading slider
   railHeading.addEventListener("input", () => {
     const val = parseInt(railHeading.value, 10);
     const dirs = ["North", "NE", "East", "SE", "South", "SW", "West", "NW", "North"];
     const compass = dirs[Math.round(val / 45)];
     railHeadingVal.textContent = `${val}° (${compass})`;
-    runSimulation();
   });
 
-  // Re-run simulation on parameter changes
-  [weatherWindSpeed, weatherWindDir, weatherTemp, weatherPressure, railLength, railAngle, simMotorSelect, simDelay].forEach(el => {
-    el.addEventListener("change", () => runSimulation());
-  });
-
-  // 4. Run 6-DOF Simulation
+  // -------------------------------------------------------------
+  // 4. 6-DOF SIMULATION & TELEMETRY CHARTS
+  // -------------------------------------------------------------
   function runSimulation() {
     const env = {
       windSpeed: parseFloat(weatherWindSpeed.value) * 0.44704, // mph to m/s
@@ -210,51 +362,43 @@ document.addEventListener("DOMContentLoaded", () => {
       railAzimuth: parseFloat(railHeading.value)
     };
 
-    parser.rocket.motor.designation = simMotorSelect.value;
-    parser.rocket.motor.delay = parseFloat(simDelay.value);
+    activeRocket.motor.designation = simMotorSelect.value;
+    activeRocket.motor.delay = parseFloat(simDelay.value);
 
-    const simEngine = new RocketSimulation(parser.rocket, env);
+    const simEngine = new RocketSimulation(activeRocket, env);
     currentSimulation = simEngine.run(parseFloat(simDelay.value));
 
-    // Update Telemetry Scorecard
+    // Update Scorecard
     statApogee.textContent = `${currentSimulation.apogee.feet.toLocaleString()} ft`;
     statApogeeM.textContent = `${currentSimulation.apogee.meters.toLocaleString()} m`;
     statMaxVel.textContent = `${currentSimulation.maxVelocity.mph} mph`;
     statMach.textContent = `Mach ${currentSimulation.maxVelocity.mach}`;
     statOptDelay.textContent = `${currentSimulation.optimumDelay} s`;
     statDeployVel.textContent = `${currentSimulation.deploymentVelocity.fps} ft/s`;
-    statMaxAcc.textContent = `${currentSimulation.maxAccelerationG} G`;
-    statLandingVel.textContent = `${currentSimulation.landingVelocity.fps} ft/s`;
 
-    // Warnings and Safety Checks
+    // Warnings
     updateWarnings(currentSimulation.warnings, currentSimulation);
 
-    // Update Charts
+    // Update Charts & Trajectory
     updateCharts(currentSimulation.trajectory);
-
-    // Load into 3D World
-    visualizer.loadSimulationTrajectory(currentSimulation.trajectory);
+    flightVisualizer.loadSimulationTrajectory(currentSimulation.trajectory);
   }
 
   function updateWarnings(warnings, sim) {
     hudWarningsList.innerHTML = "";
     const list = [...warnings];
 
-    // Check Tripoli delay warning
     if (Math.abs(sim.actualDelay - sim.optimumDelay) > 2.5) {
       list.push({
-        type: "danger",
-        title: "Sub-optimal Ejection Delay",
-        text: `Motor delay (${sim.actualDelay}s) differs from optimum (${sim.optimumDelay}s). Drill delay with UDDT tool!`
+        title: "Sub-optimal Delay",
+        text: `Configured delay (${sim.actualDelay}s) vs Optimum (${sim.optimumDelay}s). Drill down with UDDT tool!`
       });
     }
 
-    // Check Sparky motor standoff distance
     if (simMotorSelect.value === "I280DM") {
       list.push({
-        type: "info",
         title: "Tripoli Sparky Rule",
-        text: "Dark Matter propellant emits sparks. Tripoli Safety Code requires 200 ft minimum spectator standoff."
+        text: "Dark Matter propellant emits sparks: minimum 200 ft spectator standoff required."
       });
     }
 
@@ -270,7 +414,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // 5. Chart.js Setup
   function initCharts() {
     const ctxAlt = document.getElementById("chart-altitude").getContext("2d");
     chartAltitude = new Chart(ctxAlt, {
@@ -278,7 +421,6 @@ document.addEventListener("DOMContentLoaded", () => {
       data: {
         labels: [],
         datasets: [{
-          label: "Altitude (ft)",
           data: [],
           borderColor: "#38bdf8",
           backgroundColor: "rgba(56, 189, 248, 0.1)",
@@ -304,21 +446,8 @@ document.addEventListener("DOMContentLoaded", () => {
       data: {
         labels: [],
         datasets: [
-          {
-            label: "Velocity (mph)",
-            data: [],
-            borderColor: "#34d399",
-            borderWidth: 2,
-            pointRadius: 0
-          },
-          {
-            label: "Thrust (N)",
-            data: [],
-            borderColor: "#f97316",
-            borderWidth: 1.5,
-            borderDash: [4, 4],
-            pointRadius: 0
-          }
+          { data: [], borderColor: "#34d399", borderWidth: 2, pointRadius: 0 },
+          { data: [], borderColor: "#f97316", borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0 }
         ]
       },
       options: {
@@ -333,73 +462,70 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function updateCharts(trajectory) {
-    if (!trajectory || trajectory.length === 0) return;
-    const sampled = trajectory.filter((_, i) => i % 5 === 0);
-
+  function updateCharts(traj) {
+    if (!traj || traj.length === 0) return;
+    const sampled = traj.filter((_, i) => i % 5 === 0);
     const times = sampled.map(p => `${p.time}s`);
-    const alts = sampled.map(p => p.altitudeFt);
-    const vels = sampled.map(p => p.velocityMph);
-    const thrusts = sampled.map(p => p.thrust);
 
     chartAltitude.data.labels = times;
-    chartAltitude.data.datasets[0].data = alts;
+    chartAltitude.data.datasets[0].data = sampled.map(p => p.altitudeFt);
     chartAltitude.update("none");
 
     chartVelocity.data.labels = times;
-    chartVelocity.data.datasets[0].data = vels;
-    chartVelocity.data.datasets[1].data = thrusts;
+    chartVelocity.data.datasets[0].data = sampled.map(p => p.velocityMph);
+    chartVelocity.data.datasets[1].data = sampled.map(p => p.thrust);
     chartVelocity.update("none");
   }
 
-  // 6. Playback & HUD Event Listeners
+  // -------------------------------------------------------------
+  // 5. PLAYBACK & REAL-TIME HUD EVENTS
+  // -------------------------------------------------------------
   btnSimPlay.addEventListener("click", () => {
-    if (visualizer.isPlaying) {
-      visualizer.pause();
+    if (flightVisualizer.isPlaying) {
+      flightVisualizer.pause();
       btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> RESUME`;
     } else {
-      visualizer.play();
+      flightVisualizer.play();
       btnSimPlay.innerHTML = `<i data-lucide="pause" class="w-4 h-4 fill-white"></i> PAUSE`;
     }
     lucide.createIcons();
   });
 
   btnSimReset.addEventListener("click", () => {
-    visualizer.reset();
+    flightVisualizer.reset();
     btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH`;
     lucide.createIcons();
   });
 
-  btnSpeed1x.addEventListener("click", () => { visualizer.setSpeed(1.0); highlightSpeedBtn(btnSpeed1x); });
-  btnSpeed2x.addEventListener("click", () => { visualizer.setSpeed(2.0); highlightSpeedBtn(btnSpeed2x); });
-  btnSpeed5x.addEventListener("click", () => { visualizer.setSpeed(5.0); highlightSpeedBtn(btnSpeed5x); });
+  btnSpeed1x.addEventListener("click", () => { flightVisualizer.setSpeed(1.0); highlightSpeed(btnSpeed1x); });
+  btnSpeed2x.addEventListener("click", () => { flightVisualizer.setSpeed(2.0); highlightSpeed(btnSpeed2x); });
+  btnSpeed5x.addEventListener("click", () => { flightVisualizer.setSpeed(5.0); highlightSpeed(btnSpeed5x); });
 
-  function highlightSpeedBtn(activeBtn) {
+  function highlightSpeed(btn) {
     [btnSpeed1x, btnSpeed2x, btnSpeed5x].forEach(b => {
       b.classList.remove("bg-slate-800", "text-sky-400", "font-bold");
       b.classList.add("text-slate-400");
     });
-    activeBtn.classList.add("bg-slate-800", "text-sky-400", "font-bold");
-    activeBtn.classList.remove("text-slate-400");
+    btn.classList.add("bg-slate-800", "text-sky-400", "font-bold");
+    btn.classList.remove("text-slate-400");
   }
 
-  // Camera angle buttons
+  // Camera views
   camPad.addEventListener("click", () => setCamMode("pad", camPad));
   camFollow.addEventListener("click", () => setCamMode("follow", camFollow));
   camRocket.addEventListener("click", () => setCamMode("rocket", camRocket));
   camTop.addEventListener("click", () => setCamMode("top", camTop));
 
-  function setCamMode(mode, activeBtn) {
-    visualizer.setCameraMode(mode);
+  function setCamMode(mode, btn) {
+    flightVisualizer.setCameraMode(mode);
     [camPad, camFollow, camRocket, camTop].forEach(b => {
       b.classList.remove("bg-sky-600", "text-white");
       b.classList.add("bg-slate-800", "text-slate-300");
     });
-    activeBtn.classList.add("bg-sky-600", "text-white");
-    activeBtn.classList.remove("bg-slate-800", "text-slate-300");
+    btn.classList.add("bg-sky-600", "text-white");
+    btn.classList.remove("bg-slate-800", "text-slate-300");
   }
 
-  // Real-time telemetry receiver from visualizer
   window.addEventListener("telemetry-update", (e) => {
     const p = e.detail;
     hudAlt.textContent = p.altitudeFt.toLocaleString();
@@ -407,32 +533,54 @@ document.addEventListener("DOMContentLoaded", () => {
     hudAcc.textContent = p.accelG;
     hudTime.textContent = `T+ ${p.time.toFixed(2)}s`;
 
-    // Flight phase badge
     if (p.phase === "powered") {
       hudFlightPhase.textContent = "Boost Phase (Thrust Powered)";
-      hudFlightPhase.className = "text-xs font-mono font-bold text-amber-400 uppercase tracking-wide";
+      hudFlightPhase.className = "text-xs font-mono font-bold text-amber-400 uppercase";
       phasePulse.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping";
     } else if (p.phase === "coast") {
       hudFlightPhase.textContent = "Coasting to Apogee";
-      hudFlightPhase.className = "text-xs font-mono font-bold text-sky-400 uppercase tracking-wide";
+      hudFlightPhase.className = "text-xs font-mono font-bold text-sky-400 uppercase";
       phasePulse.className = "w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse";
     } else if (p.phase === "descent") {
       if (p.posY <= 0.05) {
         hudFlightPhase.textContent = "Touchdown / Landed";
-        hudFlightPhase.className = "text-xs font-mono font-bold text-emerald-400 uppercase tracking-wide";
+        hudFlightPhase.className = "text-xs font-mono font-bold text-emerald-400 uppercase";
         phasePulse.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
       } else {
         hudFlightPhase.textContent = "Parachute Recovery Descent";
-        hudFlightPhase.className = "text-xs font-mono font-bold text-emerald-400 uppercase tracking-wide";
+        hudFlightPhase.className = "text-xs font-mono font-bold text-emerald-400 uppercase";
         phasePulse.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
       }
     }
   });
 
-  // Export .ork / JSON config
+  // -------------------------------------------------------------
+  // 6. .ORK IMPORT & EXPORT
+  // -------------------------------------------------------------
+  orkFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      activeRocketName.textContent = `Loading ${file.name}...`;
+      const buffer = await file.arrayBuffer();
+      const parsed = await parser.parseOrkFile(buffer);
+      activeRocket = parsed;
+      activeRocketName.textContent = parsed.name;
+      recalculateAndRender();
+      switchWorkflowStep(1); // Go straight to designer
+    } catch (err) {
+      alert("Error parsing OpenRocket file: " + err.message);
+    }
+  });
+
+  btnQuickSample.addEventListener("click", () => {
+    location.reload();
+  });
+
   btnExportOrk.addEventListener("click", () => {
     const exportData = {
-      rocket: parser.rocket,
+      rocket: activeRocket,
       simulation: currentSimulation ? {
         apogee: currentSimulation.apogee,
         maxVelocity: currentSimulation.maxVelocity,
@@ -443,8 +591,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${parser.rocket.name || "rocket"}-sim.json`;
+    a.download = `${activeRocket.name || "rocket"}-config.json`;
     a.click();
     URL.revokeObjectURL(url);
   });
+
+  // Initial Startup
+  initCharts();
+  recalculateAndRender();
+  switchWorkflowStep(1); // Start in Rocket Designer
 });
