@@ -1,19 +1,37 @@
 /**
  * OpenRocket XML / .ork Archive Parser
  * Robust XML DOM traversal handling OpenRocket XML structure.
+ * Extracts embedded .rse thrust curves and configured motor designations.
  */
 
 class OpenRocketParser {
   constructor() {
     this.rocket = null;
+    this.motorDb = window.globalMotorDb || (window.MotorDatabase ? new window.MotorDatabase() : null);
   }
 
   async parseOrkFile(fileOrBuffer) {
     let xmlText = "";
+    let rseTexts = [];
 
     if (fileOrBuffer instanceof ArrayBuffer || fileOrBuffer instanceof Uint8Array) {
       try {
         const zip = await JSZip.loadAsync(fileOrBuffer);
+        
+        // Check for embedded .rse thrust curves
+        const rseFiles = Object.keys(zip.files).filter(name => name.endsWith(".rse") || name.endsWith(".eng"));
+        for (const rsePath of rseFiles) {
+          try {
+            const rseStr = await zip.files[rsePath].async("string");
+            rseTexts.push(rseStr);
+            if (this.motorDb) {
+              this.motorDb.parseRse(rseStr);
+            }
+          } catch (e) {
+            console.warn("Could not read RSE file:", rsePath, e);
+          }
+        }
+
         const candidateName = Object.keys(zip.files).find(
           name => name === "rocket.ork" || name.endsWith(".ork") || name.endsWith(".xml")
         );
@@ -86,7 +104,6 @@ class OpenRocketParser {
     };
 
     // Find the stage that contains rocket components
-    // OpenRocket hierarchy: <rocket> -> <subcomponents> -> <stage> -> <subcomponents> -> [<nosecone>, <bodytube>, ...]
     let physicalStage = null;
     let stageSubcomponentsNode = null;
 
@@ -229,13 +246,22 @@ class OpenRocketParser {
       });
     }
 
-    // Motor check
+    // Accurate Motor Extraction from OpenRocket file
     let designation = "I280DM";
     let delay = 10.0;
+    let manufacturer = "AeroTech";
+
     const motorNodes = doc.getElementsByTagName("motor");
     if (motorNodes.length > 0) {
-      designation = getChildText(motorNodes[0], "designation", designation);
-      delay = parseNum(getChildText(motorNodes[0], "delay"), delay);
+      const mNode = motorNodes[0];
+      designation = getChildText(mNode, "designation", designation);
+      delay = parseNum(getChildText(mNode, "delay"), delay);
+      manufacturer = getChildText(mNode, "manufacturer", manufacturer);
+    }
+
+    // Register with motor database
+    if (this.motorDb) {
+      this.motorDb.getMotor(designation);
     }
 
     this.rocket = {
@@ -243,6 +269,7 @@ class OpenRocketParser {
       stage: stageName,
       components: components,
       motor: {
+        manufacturer: manufacturer,
         designation: designation,
         delay: delay
       },

@@ -18,63 +18,7 @@ class RocketSimulation {
       railAzimuth: 0 // launch heading
     };
 
-    // Pre-defined motor thrust profiles
-    this.motorDatabase = {
-      "I280DM": {
-        totalImpulse: 370,
-        burnTime: 1.35,
-        avgThrust: 274,
-        peakThrust: 345,
-        propellantMass: 0.178, // kg
-        totalMass: 0.354, // kg
-        // Normalized thrust curve [t/burnTime, F/peakThrust]
-        curve: [
-          [0.0, 0.2],
-          [0.05, 1.0],
-          [0.2, 0.95],
-          [0.5, 0.85],
-          [0.8, 0.75],
-          [0.95, 0.4],
-          [1.0, 0.0]
-        ]
-      },
-      "H128W": {
-        totalImpulse: 198,
-        burnTime: 1.55,
-        avgThrust: 128,
-        peakThrust: 180,
-        propellantMass: 0.098,
-        totalMass: 0.210,
-        curve: [[0.0, 0.3], [0.1, 1.0], [0.5, 0.8], [0.9, 0.7], [1.0, 0.0]]
-      },
-      "H180W": {
-        totalImpulse: 240,
-        burnTime: 1.30,
-        avgThrust: 184,
-        peakThrust: 230,
-        propellantMass: 0.115,
-        totalMass: 0.230,
-        curve: [[0.0, 0.4], [0.08, 1.0], [0.6, 0.85], [0.95, 0.5], [1.0, 0.0]]
-      },
-      "I350CS": {
-        totalImpulse: 398,
-        burnTime: 1.15,
-        avgThrust: 346,
-        peakThrust: 420,
-        propellantMass: 0.190,
-        totalMass: 0.380,
-        curve: [[0.0, 0.5], [0.05, 1.0], [0.4, 0.9], [0.9, 0.8], [1.0, 0.0]]
-      },
-      "J350W": {
-        totalImpulse: 720,
-        burnTime: 2.05,
-        avgThrust: 351,
-        peakThrust: 450,
-        propellantMass: 0.350,
-        totalMass: 0.720,
-        curve: [[0.0, 0.3], [0.1, 1.0], [0.5, 0.85], [0.9, 0.75], [1.0, 0.0]]
-      }
-    };
+    this.motorDb = window.globalMotorDb || (window.MotorDatabase ? new window.MotorDatabase() : null);
   }
 
   getAirDensity(altitude) {
@@ -92,11 +36,12 @@ class RocketSimulation {
   }
 
   getThrust(time, motorCode) {
-    const motor = this.motorDatabase[motorCode] || this.motorDatabase["I280DM"];
+    const motor = this.motorDb ? this.motorDb.getMotor(motorCode) : null;
+    if (!motor) return 0;
     if (time < 0 || time > motor.burnTime) return 0;
 
     const normT = time / motor.burnTime;
-    const curve = motor.curve;
+    const curve = motor.curve || [[0, 0], [0.1, 1], [1, 0]];
 
     // Linear interpolation
     for (let i = 0; i < curve.length - 1; i++) {
@@ -116,7 +61,7 @@ class RocketSimulation {
    */
   run(delayOverride) {
     const motorCode = this.rocket.motor?.designation || "I280DM";
-    const motor = this.motorDatabase[motorCode] || this.motorDatabase["I280DM"];
+    const motor = this.motorDb ? this.motorDb.getMotor(motorCode) : { totalMass: 0.354, burnTime: 1.35 };
     const delay = delayOverride !== undefined ? delayOverride : (this.rocket.motor?.delay || 10.0);
 
     const crossSectionArea = Math.PI * Math.pow(this.rocket.diameter / 2, 2);
