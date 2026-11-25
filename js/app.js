@@ -1,489 +1,448 @@
 /**
- * Main Application Orchestrator:
- * Manages 3-Step Sequential Workflow:
- *  Step 1: 3D Rocket Designer & Component Config (Add/Edit parts, live Barrowman CG/CP)
- *  Step 2: Launch Site, Rail Standoff & Live Satellite Weather Setup
- *  Step 3: 3D Flight Simulation, Camera Modes, Propellant FX & Telemetry Graphs
+ * OpenRocket Web Edition Controller
+ * Connects OpenRocket CAD Layout:
+ *  - Component Tree (Sustainer, Nose cone, Body tubes, Fins, Coupler, Rings)
+ *  - 2D Blueprint Canvas (Centimeter ruler, technical line render, CG/CP markers)
+ *  - Component Add/Edit modal dialogs
+ *  - Flight Configuration sync & 3D Flight Simulation
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // 1. Initialize Services
+  // 1. Services & Renderers
   const parser = new OpenRocketParser();
   const weatherService = new WeatherService();
-  
-  // Dual 3D Renderers: Studio for CAD/Design, World for 3D Launch Flight
-  const designVisualizer = new Rocket3DVisualizer("design-canvas-container", true);
+  const blueprint = new RocketBlueprintRenderer("blueprint-canvas", "ruler-canvas");
   const flightVisualizer = new Rocket3DVisualizer("canvas-container", false);
 
-  let currentSimulation = null;
-  let chartAltitude = null;
-  let chartVelocity = null;
-  let selectedComponentIndex = 0;
-
-  // Active Rocket State
+  // Active Rocket Architecture
   let activeRocket = {
-    name: "Apogee Zephyr (L1 Build)",
+    name: "Apogee Zephyr",
+    stage: "Sustainer",
     components: [
-      { id: "nose-1", type: "nosecone", name: "Ogive Nose Cone", length: 0.503, radius: 0.051, color: "red" },
-      { id: "tube-1", type: "bodytube", name: "Upper Body Tube (Payload)", length: 0.457, radius: 0.051, color: "white" },
-      { id: "tube-2", type: "bodytube", name: "Lower Body Tube (Booster)", length: 0.457, radius: 0.051, color: "white" },
-      { id: "fins-1", type: "fins", name: "Zephyr TTW Plywood Fins", count: 3, rootChord: 0.22, span: 0.125, tipChord: 0.09, sweepLength: 0.13, color: "black" }
+      { id: "comp-1", type: "nosecone", name: "Nose cone", length: 0.503, radius: 0.051, color: "white" },
+      { id: "comp-2", type: "bodytube", name: "Body tube", length: 0.457, radius: 0.051, color: "white", children: [
+        { id: "comp-2a", type: "coupler", name: "Tube coupler", length: 0.15, radius: 0.049 },
+        { id: "comp-2b", type: "parachute", name: "Parachute", diameter: 1.22 }
+      ]},
+      { id: "comp-3", type: "bodytube", name: "Body tube", length: 0.457, radius: 0.051, color: "white", children: [
+        { id: "comp-3a", type: "shockcord", name: "Shock cord", length: 7.5 },
+        { id: "comp-3b", type: "fins", name: "Freeform fin set", count: 3, rootChord: 0.22, span: 0.125, tipChord: 0.09, sweepLength: 0.13 },
+        { id: "comp-3c", type: "innertube", name: "Inner Tube", length: 0.279, radius: 0.019 },
+        { id: "comp-3d", type: "ring", name: "Centering ring", position: 0.02 },
+        { id: "comp-3e", type: "ring", name: "Centering ring", position: 0.26 },
+        { id: "comp-3f", type: "eyebolt", name: "Eye bolt, nut and washers" },
+        { id: "comp-3g", type: "protector", name: "Parachute protector" }
+      ]}
     ],
     motor: {
       designation: "I280DM",
       delay: 10.0
     },
-    diameter: 0.102,
     length: 1.417,
-    dryMass: 1.50,
-    totalMass: 1.854
+    diameter: 0.102,
+    dryMass: 1.492,
+    totalMass: 1.846
   };
 
-  // Workflow Stage Views
-  const viewDesigner = document.getElementById("view-designer");
-  const viewEnvironment = document.getElementById("view-environment");
-  const viewSimulation = document.getElementById("view-simulation");
+  let selectedComponent = activeRocket.components[0];
+  let currentSimulation = null;
+  let chartAltitude = null;
 
-  const stepBtn1 = document.getElementById("workflow-step-1");
-  const stepBtn2 = document.getElementById("workflow-step-2");
-  const stepBtn3 = document.getElementById("workflow-step-3");
+  // DOM Elements - Navigation Tabs
+  const tabRocketDesign = document.getElementById("tab-rocket-design");
+  const tabMotorsConfig = document.getElementById("tab-motors-config");
+  const tabFlightSims = document.getElementById("tab-flight-sims");
+  const btnTestFlightTop = document.getElementById("btn-test-flight-top");
 
-  const btnProceedToEnv = document.getElementById("btn-proceed-to-env");
-  const btnBackToDesign = document.getElementById("btn-back-to-design");
-  const btnProceedToSim = document.getElementById("btn-proceed-to-sim");
+  const viewRocketDesign = document.getElementById("view-rocket-design");
+  const viewMotorsConfig = document.getElementById("view-motors-config");
+  const viewFlightSims = document.getElementById("view-flight-sims");
 
-  // Parts List & Properties
-  const designerPartsList = document.getElementById("designer-parts-list");
-  const partPropertiesCard = document.getElementById("part-properties-card");
-  const propPartName = document.getElementById("prop-part-name");
-  const propPartType = document.getElementById("prop-part-type");
-  const propLenIn = document.getElementById("prop-len-in");
-  const propDiaIn = document.getElementById("prop-dia-in");
-  const propColor = document.getElementById("prop-color");
-  const btnSavePart = document.getElementById("btn-save-part");
+  // Tree & Actions
+  const treeContainer = document.getElementById("tree-container");
+  const btnTreeUp = document.getElementById("btn-tree-up");
+  const btnTreeDown = document.getElementById("btn-tree-down");
+  const btnTreeEdit = document.getElementById("btn-tree-edit");
+  const btnTreeDelete = document.getElementById("btn-tree-delete");
 
-  // Add Part Buttons
-  const btnAddNose = document.getElementById("btn-add-nose");
-  const btnAddTube = document.getElementById("btn-add-tube");
-  const btnAddFins = document.getElementById("btn-add-fins");
+  // Add Component Toolbar
+  const toolAddNose = document.getElementById("tool-add-nose");
+  const toolAddBodytube = document.getElementById("tool-add-bodytube");
+  const toolAddTransition = document.getElementById("tool-add-transition");
+  const toolAddTrapezoidFins = document.getElementById("tool-add-trapezoid-fins");
+  const toolAddFreeformFins = document.getElementById("tool-add-freeform-fins");
+  const toolAddInnertube = document.getElementById("tool-add-innertube");
+  const toolAddCoupler = document.getElementById("tool-add-coupler");
+  const toolAddRings = document.getElementById("tool-add-rings");
+  const toolAddParachute = document.getElementById("tool-add-parachute");
 
-  // Environmental inputs
-  const launchSiteSelect = document.getElementById("launch-site-select");
-  const siteCoords = document.getElementById("site-coords");
-  const customCoordsRow = document.getElementById("custom-coords-row");
-  const btnFetchWeather = document.getElementById("btn-fetch-live-weather");
-  const weatherWindSpeed = document.getElementById("weather-wind-speed");
-  const weatherWindDir = document.getElementById("weather-wind-dir");
-  const weatherTemp = document.getElementById("weather-temp");
-  const weatherPressure = document.getElementById("weather-pressure");
+  // Blueprint Toolbar
+  const selectViewType = document.getElementById("select-view-type");
+  const btnZoomIn = document.getElementById("btn-zoom-in");
+  const btnZoomOut = document.getElementById("btn-zoom-out");
+  const zoomLevelText = document.getElementById("zoom-level-text");
+  const checkShowCgCp = document.getElementById("check-show-cg-cp");
+  const checkCallipers = document.getElementById("check-callipers");
+  const configMotorSelect = document.getElementById("config-motor-select");
 
-  const railLength = document.getElementById("rail-length");
-  const railAngle = document.getElementById("rail-angle");
-  const railHeading = document.getElementById("rail-heading");
-  const railHeadingVal = document.getElementById("rail-heading-val");
-  const simMotorSelect = document.getElementById("sim-motor-select");
-  const simDelay = document.getElementById("sim-delay");
+  // Edit Modal
+  const editModal = document.getElementById("edit-modal");
+  const modalTitle = document.getElementById("modal-title");
+  const modalCompName = document.getElementById("modal-comp-name");
+  const modalCompLen = document.getElementById("modal-comp-len");
+  const modalCompDia = document.getElementById("modal-comp-dia");
+  const modalCompColor = document.getElementById("modal-comp-color");
+  const modalClose = document.getElementById("modal-close");
+  const modalBtnCancel = document.getElementById("modal-btn-cancel");
+  const modalBtnSave = document.getElementById("modal-btn-save");
 
-  // Flight Controls
-  const btnSimPlay = document.getElementById("btn-sim-play");
-  const btnSimReset = document.getElementById("btn-sim-reset");
-  const btnSpeed1x = document.getElementById("btn-speed-1x");
-  const btnSpeed2x = document.getElementById("btn-speed-2x");
-  const btnSpeed5x = document.getElementById("btn-speed-5x");
-
-  // Camera angles
-  const camPad = document.getElementById("cam-pad");
-  const camFollow = document.getElementById("cam-follow");
-  const camRocket = document.getElementById("cam-rocket");
-  const camTop = document.getElementById("cam-top");
-
-  // Scorecard stats
-  const statApogee = document.getElementById("stat-apogee");
-  const statApogeeM = document.getElementById("stat-apogee-m");
-  const statMaxVel = document.getElementById("stat-max-vel");
-  const statMach = document.getElementById("stat-mach");
-  const statOptDelay = document.getElementById("stat-opt-delay");
-  const statDeployVel = document.getElementById("stat-deploy-vel");
-
-  // HUD
-  const hudAlt = document.getElementById("hud-alt");
-  const hudVel = document.getElementById("hud-vel");
-  const hudAcc = document.getElementById("hud-acc");
-  const hudTime = document.getElementById("hud-time");
-  const hudFlightPhase = document.getElementById("hud-flight-phase");
-  const phasePulse = document.getElementById("phase-pulse");
-  const hudWarningsBox = document.getElementById("hud-warnings-box");
-  const hudWarningsList = document.getElementById("hud-warnings-list");
-
-  // Navigation & Export
+  // File I/O
   const orkFileInput = document.getElementById("ork-file-input");
   const btnExportOrk = document.getElementById("btn-export-ork");
-  const btnQuickSample = document.getElementById("btn-quick-sample");
-  const activeRocketName = document.getElementById("active-rocket-name");
-
-  // Set today's date
-  document.getElementById("sim-date").value = new Date().toISOString().split("T")[0];
 
   // -------------------------------------------------------------
-  // 1. WORKFLOW STEP SWITCHING LOGIC (DESIGN -> PAD -> LAUNCH)
+  // 1. TAB SWITCHING
   // -------------------------------------------------------------
-  function switchWorkflowStep(stepNumber) {
-    [viewDesigner, viewEnvironment, viewSimulation].forEach(v => v.classList.add("hidden"));
-    [stepBtn1, stepBtn2, stepBtn3].forEach(b => {
-      b.classList.remove("bg-brand-600", "text-white", "shadow");
-      b.classList.add("text-slate-400");
+  function switchTab(target) {
+    [viewRocketDesign, viewMotorsConfig, viewFlightSims].forEach(v => v.classList.add("hidden"));
+    [tabRocketDesign, tabMotorsConfig, tabFlightSims].forEach(t => {
+      t.className = "px-4 h-full border-t border-l border-r border-transparent hover:bg-slate-100 font-medium text-slate-600 rounded-t-sm";
     });
 
-    if (stepNumber === 1) {
-      viewDesigner.classList.remove("hidden");
-      stepBtn1.classList.add("bg-brand-600", "text-white", "shadow");
-      stepBtn1.classList.remove("text-slate-400");
-      setTimeout(() => designVisualizer.onWindowResize(), 50);
-    } else if (stepNumber === 2) {
-      viewEnvironment.classList.remove("hidden");
-      stepBtn2.classList.add("bg-brand-600", "text-white", "shadow");
-      stepBtn2.classList.remove("text-slate-400");
-    } else if (stepNumber === 3) {
-      viewSimulation.classList.remove("hidden");
-      stepBtn3.classList.add("bg-brand-600", "text-white", "shadow");
-      stepBtn3.classList.remove("text-slate-400");
+    if (target === "design") {
+      viewRocketDesign.classList.remove("hidden");
+      tabRocketDesign.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
+      setTimeout(() => {
+        blueprint.resizeCanvases();
+        blueprint.draw();
+      }, 50);
+    } else if (target === "motors") {
+      viewMotorsConfig.classList.remove("hidden");
+      tabMotorsConfig.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
+    } else if (target === "sims") {
+      viewFlightSims.classList.remove("hidden");
+      tabFlightSims.className = "px-4 h-full border-t border-l border-r border-slate-300 bg-white font-bold text-slate-800 rounded-t-sm shadow-sm";
       setTimeout(() => flightVisualizer.onWindowResize(), 50);
-      runSimulation(); // auto-simulate flight
+      runSimulation();
     }
   }
 
-  stepBtn1.addEventListener("click", () => switchWorkflowStep(1));
-  stepBtn2.addEventListener("click", () => switchWorkflowStep(2));
-  stepBtn3.addEventListener("click", () => switchWorkflowStep(3));
-
-  btnProceedToEnv.addEventListener("click", () => switchWorkflowStep(2));
-  btnBackToDesign.addEventListener("click", () => switchWorkflowStep(1));
-  btnProceedToSim.addEventListener("click", () => switchWorkflowStep(3));
+  tabRocketDesign.addEventListener("click", () => switchTab("design"));
+  tabMotorsConfig.addEventListener("click", () => switchTab("motors"));
+  tabFlightSims.addEventListener("click", () => switchTab("sims"));
+  btnTestFlightTop.addEventListener("click", () => switchTab("sims"));
 
   // -------------------------------------------------------------
-  // 2. COMPONENT LIST & DESIGNER LOGIC
+  // 2. OPENROCKET COMPONENT TREE RENDERING
   // -------------------------------------------------------------
-  function renderComponentTree() {
-    designerPartsList.innerHTML = "";
+  function renderTree() {
+    treeContainer.innerHTML = "";
+
+    // Root Sustainer Node
+    const root = document.createElement("div");
+    root.className = "flex items-center gap-1 text-slate-800 font-bold px-1 py-0.5";
+    root.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-sky-600"></i> <span>Sustainer</span>`;
+    treeContainer.appendChild(root);
+
+    // Components List
     activeRocket.components.forEach((comp, idx) => {
-      const card = document.createElement("div");
-      card.className = `p-2.5 rounded-lg border cursor-pointer transition flex items-center justify-between ${
-        idx === selectedComponentIndex
-          ? "bg-sky-950/60 border-sky-500 shadow-sm"
-          : "bg-slate-950/50 border-slate-800 hover:border-slate-700"
+      const item = document.createElement("div");
+      const isSelected = selectedComponent === comp;
+      item.className = `flex items-center justify-between pl-4 pr-1 py-1 rounded cursor-pointer ${
+        isSelected ? "tree-item-selected" : "hover:bg-slate-100 text-slate-700"
       }`;
 
-      const icon = comp.type === "nosecone" ? "cone" : (comp.type === "fins" ? "triangle" : "cylinder");
-      const lenIn = ((comp.length || 0.457) * 39.3701).toFixed(1);
-      const diaIn = ((comp.radius || 0.051) * 2 * 39.3701).toFixed(1);
+      let icon = "cone";
+      if (comp.type === "bodytube") icon = "cylinder";
+      else if (comp.type === "fins") icon = "triangle";
 
-      card.innerHTML = `
-        <div class="flex items-center gap-2">
-          <i data-lucide="${icon}" class="w-4 h-4 text-sky-400"></i>
-          <div>
-            <div class="font-bold text-xs text-slate-200">${comp.name}</div>
-            <div class="text-[10px] text-slate-400 font-mono">Len: ${lenIn}" | Dia: ${diaIn}"</div>
-          </div>
+      item.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="${icon}" class="w-3.5 h-3.5 text-slate-500"></i>
+          <span>${comp.name}</span>
         </div>
-        <button class="text-rose-400 hover:text-rose-300 p-1 text-xs" data-delete="${idx}" title="Delete component">✕</button>
       `;
 
-      card.addEventListener("click", (e) => {
-        if (e.target.dataset.delete !== undefined) return;
-        selectedComponentIndex = idx;
-        renderComponentTree();
-        populatePartProperties(comp);
+      item.addEventListener("click", () => {
+        selectedComponent = comp;
+        renderTree();
       });
 
-      const delBtn = card.querySelector(`[data-delete="${idx}"]`);
-      delBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (activeRocket.components.length <= 1) {
-          alert("A rocket must have at least one component!");
-          return;
-        }
-        activeRocket.components.splice(idx, 1);
-        selectedComponentIndex = Math.max(0, idx - 1);
-        recalculateAndRender();
+      item.addEventListener("dblclick", () => {
+        openEditModal(comp);
       });
 
-      designerPartsList.appendChild(card);
+      treeContainer.appendChild(item);
+
+      // Render Child sub-components (if any)
+      if (comp.children && comp.children.length > 0) {
+        comp.children.forEach(sub => {
+          const subItem = document.createElement("div");
+          const isSubSelected = selectedComponent === sub;
+          subItem.className = `flex items-center gap-1.5 pl-8 pr-1 py-0.5 rounded cursor-pointer text-[11px] ${
+            isSubSelected ? "tree-item-selected" : "hover:bg-slate-100 text-slate-600"
+          }`;
+
+          let subIcon = "box";
+          if (sub.type === "parachute") subIcon = "umbrella";
+          else if (sub.type === "fins") subIcon = "triangle";
+          else if (sub.type === "innertube") subIcon = "circle-dot";
+          else if (sub.type === "ring") subIcon = "disc";
+          else if (sub.type === "coupler") subIcon = "link";
+
+          subItem.innerHTML = `<i data-lucide="${subIcon}" class="w-3 h-3 text-slate-400"></i> <span>${sub.name}</span>`;
+
+          subItem.addEventListener("click", () => {
+            selectedComponent = sub;
+            renderTree();
+          });
+
+          subItem.addEventListener("dblclick", () => {
+            openEditModal(sub);
+          });
+
+          treeContainer.appendChild(subItem);
+        });
+      }
     });
 
     lucide.createIcons();
-    if (activeRocket.components[selectedComponentIndex]) {
-      populatePartProperties(activeRocket.components[selectedComponentIndex]);
+    updateReadouts();
+  }
+
+  // -------------------------------------------------------------
+  // 3. COMPONENT EDIT MODAL (Double Click)
+  // -------------------------------------------------------------
+  function openEditModal(comp) {
+    selectedComponent = comp;
+    modalTitle.textContent = `Edit ${comp.name}`;
+    modalCompName.value = comp.name;
+    modalCompLen.value = comp.length ? (comp.length * 100).toFixed(1) : 45.7;
+    modalCompDia.value = comp.radius ? (comp.radius * 2 * 100).toFixed(1) : 10.2;
+    modalCompColor.value = comp.color || "white";
+    editModal.classList.remove("hidden");
+  }
+
+  modalClose.addEventListener("click", () => editModal.classList.add("hidden"));
+  modalBtnCancel.addEventListener("click", () => editModal.classList.add("hidden"));
+
+  modalBtnSave.addEventListener("click", () => {
+    if (!selectedComponent) return;
+    selectedComponent.name = modalCompName.value;
+    if (selectedComponent.length !== undefined) {
+      selectedComponent.length = parseFloat(modalCompLen.value) / 100;
     }
-  }
+    if (selectedComponent.radius !== undefined) {
+      selectedComponent.radius = (parseFloat(modalCompDia.value) / 2) / 100;
+    }
+    selectedComponent.color = modalCompColor.value;
 
-  function populatePartProperties(comp) {
-    propPartName.textContent = comp.name;
-    propPartType.textContent = comp.type;
-    propLenIn.value = ((comp.length || 0.457) * 39.3701).toFixed(1);
-    propDiaIn.value = ((comp.radius || 0.051) * 2 * 39.3701).toFixed(1);
-    propColor.value = comp.color || "white";
-  }
-
-  btnSavePart.addEventListener("click", () => {
-    const comp = activeRocket.components[selectedComponentIndex];
-    if (!comp) return;
-
-    comp.length = parseFloat(propLenIn.value) / 39.3701;
-    comp.radius = (parseFloat(propDiaIn.value) / 2) / 39.3701;
-    comp.color = propColor.value;
-
-    recalculateAndRender();
+    editModal.classList.add("hidden");
+    recalcStability();
+    renderTree();
+    blueprint.draw();
   });
 
-  // Adding Parts
-  btnAddNose.addEventListener("click", () => {
+  btnTreeEdit.addEventListener("click", () => {
+    if (selectedComponent) openEditModal(selectedComponent);
+  });
+
+  btnTreeDelete.addEventListener("click", () => {
+    if (!selectedComponent) return;
+    const idx = activeRocket.components.indexOf(selectedComponent);
+    if (idx !== -1) {
+      activeRocket.components.splice(idx, 1);
+      selectedComponent = activeRocket.components[0];
+      recalcStability();
+      renderTree();
+      blueprint.draw();
+    }
+  });
+
+  // -------------------------------------------------------------
+  // 4. ADD NEW COMPONENT BUTTONS
+  // -------------------------------------------------------------
+  toolAddNose.addEventListener("click", () => {
     activeRocket.components.unshift({
       id: "nose-" + Date.now(),
       type: "nosecone",
-      name: "New Nose Cone",
-      length: 0.4,
-      radius: 0.051,
-      color: "red"
-    });
-    selectedComponentIndex = 0;
-    recalculateAndRender();
-  });
-
-  btnAddTube.addEventListener("click", () => {
-    activeRocket.components.push({
-      id: "tube-" + Date.now(),
-      type: "bodytube",
-      name: `Body Tube Section`,
-      length: 0.4,
+      name: "Nose cone",
+      length: 0.503,
       radius: 0.051,
       color: "white"
     });
-    selectedComponentIndex = activeRocket.components.length - 1;
-    recalculateAndRender();
+    recalcStability();
+    renderTree();
+    blueprint.draw();
   });
 
-  btnAddFins.addEventListener("click", () => {
+  toolAddBodytube.addEventListener("click", () => {
     activeRocket.components.push({
-      id: "fins-" + Date.now(),
-      type: "fins",
-      name: `Trapezoid Fin Set`,
-      count: 3,
-      rootChord: 0.20,
-      span: 0.12,
-      tipChord: 0.08,
-      sweepLength: 0.12,
-      color: "black"
+      id: "tube-" + Date.now(),
+      type: "bodytube",
+      name: "Body tube",
+      length: 0.457,
+      radius: 0.051,
+      color: "white",
+      children: []
     });
-    selectedComponentIndex = activeRocket.components.length - 1;
-    recalculateAndRender();
+    recalcStability();
+    renderTree();
+    blueprint.draw();
   });
 
-  function recalculateAndRender() {
+  toolAddFreeformFins.addEventListener("click", () => {
+    const lastTube = activeRocket.components[activeRocket.components.length - 1];
+    if (lastTube && lastTube.children) {
+      lastTube.children.push({
+        id: "fins-" + Date.now(),
+        type: "fins",
+        name: "Freeform fin set",
+        count: 3,
+        rootChord: 0.22,
+        span: 0.125,
+        tipChord: 0.09,
+        sweepLength: 0.13
+      });
+      renderTree();
+      blueprint.draw();
+    }
+  });
+
+  toolAddParachute.addEventListener("click", () => {
+    const firstTube = activeRocket.components.find(c => c.type === "bodytube");
+    if (firstTube) {
+      if (!firstTube.children) firstTube.children = [];
+      firstTube.children.push({
+        id: "chute-" + Date.now(),
+        type: "parachute",
+        name: "Parachute",
+        diameter: 1.22
+      });
+      renderTree();
+      blueprint.draw();
+    }
+  });
+
+  // -------------------------------------------------------------
+  // 5. BLUEPRINT VIEWPORT CONTROLS
+  // -------------------------------------------------------------
+  btnZoomIn.addEventListener("click", () => {
+    blueprint.zoom = Math.min(2.0, blueprint.zoom + 0.15);
+    zoomLevelText.textContent = `${Math.round(blueprint.zoom * 100)}%`;
+    blueprint.draw();
+  });
+
+  btnZoomOut.addEventListener("click", () => {
+    blueprint.zoom = Math.max(0.4, blueprint.zoom - 0.15);
+    zoomLevelText.textContent = `${Math.round(blueprint.zoom * 100)}%`;
+    blueprint.draw();
+  });
+
+  checkShowCgCp.addEventListener("change", () => {
+    blueprint.showCgCp = checkShowCgCp.checked;
+    blueprint.draw();
+  });
+
+  checkCallipers.addEventListener("change", () => {
+    blueprint.showCallipers = checkCallipers.checked;
+    blueprint.draw();
+  });
+
+  configMotorSelect.addEventListener("change", () => {
+    activeRocket.motor.designation = configMotorSelect.value;
+    document.getElementById("info-flight-config").textContent = `Flight configuration: [${configMotorSelect.value}-10]`;
+    blueprint.draw();
+  });
+
+  function recalcStability() {
     parser.rocket = activeRocket;
     parser.calculateBarrowmanStability();
+    updateReadouts();
+  }
 
-    // Total length
-    let totalLen = 0;
+  function updateReadouts() {
+    let len = 0;
     activeRocket.components.forEach(c => {
-      if (c.type === "nosecone" || c.type === "bodytube") totalLen += c.length;
+      if (c.length) len += c.length;
     });
-    activeRocket.length = totalLen;
+    activeRocket.length = len;
 
-    // Update Designer Metrics
-    document.getElementById("designer-stability").textContent = `${activeRocket.stabilityCalibers || 1.82} cal (Stable)`;
-    document.getElementById("designer-cg").textContent = `${(activeRocket.cg || 1.02).toFixed(2)} m`;
-    document.getElementById("designer-cp").textContent = `${(activeRocket.cp || 1.21).toFixed(2)} m`;
-    document.getElementById("designer-len").textContent = `${(totalLen * 39.3701).toFixed(1)} in (${totalLen.toFixed(2)}m)`;
+    const cgCm = (activeRocket.cg || 1.02) * 100;
+    const cpCm = (activeRocket.cp || 1.21) * 100;
+    const stabCal = (((activeRocket.cp || 1.21) - (activeRocket.cg || 1.02)) / 0.102).toFixed(2);
 
-    renderComponentTree();
-    designVisualizer.buildRocketModel(activeRocket);
-    flightVisualizer.buildRocketModel(activeRocket);
+    document.getElementById("info-len").textContent = `${Math.round(len * 100)} cm`;
+    document.getElementById("info-cg").textContent = `${Math.round(cgCm)} cm`;
+    document.getElementById("info-cp").textContent = `${Math.round(cpCm)} cm`;
+    document.getElementById("info-stability-cal").textContent = `${stabCal} cal`;
   }
 
   // -------------------------------------------------------------
-  // 3. LAUNCH SITE & LIVE SATELLITE WEATHER LOGIC
-  // -------------------------------------------------------------
-  launchSiteSelect.addEventListener("change", async () => {
-    const siteKey = launchSiteSelect.value;
-    if (siteKey === "custom") {
-      customCoordsRow.classList.remove("hidden");
-      customCoordsRow.classList.add("grid");
-    } else {
-      customCoordsRow.classList.add("hidden");
-      customCoordsRow.classList.remove("grid");
-      const site = weatherService.getSite(siteKey);
-      siteCoords.textContent = `${site.lat.toFixed(2)}° N, ${Math.abs(site.lon).toFixed(2)}° W`;
-    }
-    await syncWeather();
-  });
-
-  btnFetchWeather.addEventListener("click", () => syncWeather());
-
-  async function syncWeather() {
-    btnFetchWeather.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> Syncing...`;
-    lucide.createIcons();
-
-    const siteKey = launchSiteSelect.value;
-    const customLat = document.getElementById("custom-lat")?.value;
-    const customLon = document.getElementById("custom-lon")?.value;
-
-    const weather = await weatherService.fetchLiveWeather(siteKey, customLat, customLon);
-    weatherWindSpeed.value = weather.windSpeedMph;
-    weatherWindDir.value = weather.windDirDeg;
-    weatherTemp.value = weather.tempF;
-    weatherPressure.value = weather.pressureMbar;
-
-    btnFetchWeather.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Synced!`;
-    lucide.createIcons();
-    setTimeout(() => {
-      btnFetchWeather.innerHTML = `<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Live Weather`;
-      lucide.createIcons();
-    }, 2000);
-  }
-
-  railHeading.addEventListener("input", () => {
-    const val = parseInt(railHeading.value, 10);
-    const dirs = ["North", "NE", "East", "SE", "South", "SW", "West", "NW", "North"];
-    const compass = dirs[Math.round(val / 45)];
-    railHeadingVal.textContent = `${val}° (${compass})`;
-  });
-
-  // -------------------------------------------------------------
-  // 4. 6-DOF SIMULATION & TELEMETRY CHARTS
+  // 6. 3D FLIGHT SIMULATION EXECUTION
   // -------------------------------------------------------------
   function runSimulation() {
     const env = {
-      windSpeed: parseFloat(weatherWindSpeed.value) * 0.44704, // mph to m/s
-      windHeading: parseFloat(weatherWindDir.value),
-      temperature: (parseFloat(weatherTemp.value) - 32) * (5/9) + 273.15,
-      pressure: parseFloat(weatherPressure.value) * 100,
-      railLength: parseFloat(railLength.value),
-      railAngle: parseFloat(railAngle.value),
-      railAzimuth: parseFloat(railHeading.value)
+      windSpeed: parseFloat(document.getElementById("weather-wind-speed").value) * 0.44704,
+      windHeading: parseFloat(document.getElementById("weather-wind-dir").value),
+      temperature: (parseFloat(document.getElementById("weather-temp").value) - 32) * (5/9) + 273.15,
+      pressure: parseFloat(document.getElementById("weather-pressure").value) * 100,
+      railLength: parseFloat(document.getElementById("rail-length").value),
+      railAngle: parseFloat(document.getElementById("rail-angle").value),
+      railAzimuth: 0
     };
 
-    activeRocket.motor.designation = simMotorSelect.value;
-    activeRocket.motor.delay = parseFloat(simDelay.value);
-
+    activeRocket.motor.designation = configMotorSelect.value;
     const simEngine = new RocketSimulation(activeRocket, env);
-    currentSimulation = simEngine.run(parseFloat(simDelay.value));
+    currentSimulation = simEngine.run(10.0);
 
-    // Update Scorecard
-    statApogee.textContent = `${currentSimulation.apogee.feet.toLocaleString()} ft`;
-    statApogeeM.textContent = `${currentSimulation.apogee.meters.toLocaleString()} m`;
-    statMaxVel.textContent = `${currentSimulation.maxVelocity.mph} mph`;
-    statMach.textContent = `Mach ${currentSimulation.maxVelocity.mach}`;
-    statOptDelay.textContent = `${currentSimulation.optimumDelay} s`;
-    statDeployVel.textContent = `${currentSimulation.deploymentVelocity.fps} ft/s`;
+    // Update Blueprint Prediction Box
+    document.getElementById("info-apogee").textContent = `${currentSimulation.apogee.meters} m (${currentSimulation.apogee.feet} ft)`;
+    document.getElementById("info-max-vel").textContent = `${currentSimulation.maxVelocity.mps} m/s (Mach ${currentSimulation.maxVelocity.mach})`;
 
-    // Warnings
-    updateWarnings(currentSimulation.warnings, currentSimulation);
-
-    // Update Charts & Trajectory
-    updateCharts(currentSimulation.trajectory);
+    // Load into 3D world
     flightVisualizer.loadSimulationTrajectory(currentSimulation.trajectory);
+
+    // Altitude Chart
+    updateAltChart(currentSimulation.trajectory);
   }
 
-  function updateWarnings(warnings, sim) {
-    hudWarningsList.innerHTML = "";
-    const list = [...warnings];
-
-    if (Math.abs(sim.actualDelay - sim.optimumDelay) > 2.5) {
-      list.push({
-        title: "Sub-optimal Delay",
-        text: `Configured delay (${sim.actualDelay}s) vs Optimum (${sim.optimumDelay}s). Drill down with UDDT tool!`
-      });
-    }
-
-    if (simMotorSelect.value === "I280DM") {
-      list.push({
-        title: "Tripoli Sparky Rule",
-        text: "Dark Matter propellant emits sparks: minimum 200 ft spectator standoff required."
-      });
-    }
-
-    if (list.length > 0) {
-      hudWarningsBox.classList.remove("hidden");
-      list.forEach(w => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span class="font-bold text-amber-300">${w.title}:</span> ${w.text}`;
-        hudWarningsList.appendChild(li);
-      });
-    } else {
-      hudWarningsBox.classList.add("hidden");
-    }
-  }
-
-  function initCharts() {
-    const ctxAlt = document.getElementById("chart-altitude").getContext("2d");
-    chartAltitude = new Chart(ctxAlt, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [{
-          data: [],
-          borderColor: "#38bdf8",
-          backgroundColor: "rgba(56, 189, 248, 0.1)",
-          borderWidth: 2,
-          fill: true,
-          pointRadius: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 9 } } },
-          y: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 9 } } }
+  function updateAltChart(traj) {
+    if (!traj) return;
+    const ctx = document.getElementById("chart-altitude").getContext("2d");
+    if (!chartAltitude) {
+      chartAltitude = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{ data: [], borderColor: "#38bdf8", borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: "rgba(56,189,248,0.1)" }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 9 } } },
+            y: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 9 } } }
+          }
         }
-      }
-    });
+      });
+    }
 
-    const ctxVel = document.getElementById("chart-velocity").getContext("2d");
-    chartVelocity = new Chart(ctxVel, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [
-          { data: [], borderColor: "#34d399", borderWidth: 2, pointRadius: 0 },
-          { data: [], borderColor: "#f97316", borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0 }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 9 } } },
-          y: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 9 } } }
-        }
-      }
-    });
-  }
-
-  function updateCharts(traj) {
-    if (!traj || traj.length === 0) return;
-    const sampled = traj.filter((_, i) => i % 5 === 0);
-    const times = sampled.map(p => `${p.time}s`);
-
-    chartAltitude.data.labels = times;
+    const sampled = traj.filter((_, i) => i % 6 === 0);
+    chartAltitude.data.labels = sampled.map(p => `${p.time}s`);
     chartAltitude.data.datasets[0].data = sampled.map(p => p.altitudeFt);
-    chartAltitude.update("none");
-
-    chartVelocity.data.labels = times;
-    chartVelocity.data.datasets[0].data = sampled.map(p => p.velocityMph);
-    chartVelocity.data.datasets[1].data = sampled.map(p => p.thrust);
-    chartVelocity.update("none");
+    chartAltitude.update();
   }
 
-  // -------------------------------------------------------------
-  // 5. PLAYBACK & REAL-TIME HUD EVENTS
-  // -------------------------------------------------------------
+  // 3D Playback buttons
+  const btnSimPlay = document.getElementById("btn-sim-play");
+  const btnSimReset = document.getElementById("btn-sim-reset");
+
   btnSimPlay.addEventListener("click", () => {
     if (flightVisualizer.isPlaying) {
       flightVisualizer.pause();
-      btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> RESUME`;
+      btnSimPlay.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-white"></i> LAUNCH`;
     } else {
       flightVisualizer.play();
       btnSimPlay.innerHTML = `<i data-lucide="pause" class="w-4 h-4 fill-white"></i> PAUSE`;
@@ -497,107 +456,63 @@ document.addEventListener("DOMContentLoaded", () => {
     lucide.createIcons();
   });
 
-  btnSpeed1x.addEventListener("click", () => { flightVisualizer.setSpeed(1.0); highlightSpeed(btnSpeed1x); });
-  btnSpeed2x.addEventListener("click", () => { flightVisualizer.setSpeed(2.0); highlightSpeed(btnSpeed2x); });
-  btnSpeed5x.addEventListener("click", () => { flightVisualizer.setSpeed(5.0); highlightSpeed(btnSpeed5x); });
-
-  function highlightSpeed(btn) {
-    [btnSpeed1x, btnSpeed2x, btnSpeed5x].forEach(b => {
-      b.classList.remove("bg-slate-800", "text-sky-400", "font-bold");
-      b.classList.add("text-slate-400");
-    });
-    btn.classList.add("bg-slate-800", "text-sky-400", "font-bold");
-    btn.classList.remove("text-slate-400");
-  }
-
-  // Camera views
-  camPad.addEventListener("click", () => setCamMode("pad", camPad));
-  camFollow.addEventListener("click", () => setCamMode("follow", camFollow));
-  camRocket.addEventListener("click", () => setCamMode("rocket", camRocket));
-  camTop.addEventListener("click", () => setCamMode("top", camTop));
-
-  function setCamMode(mode, btn) {
-    flightVisualizer.setCameraMode(mode);
-    [camPad, camFollow, camRocket, camTop].forEach(b => {
-      b.classList.remove("bg-sky-600", "text-white");
-      b.classList.add("bg-slate-800", "text-slate-300");
-    });
-    btn.classList.add("bg-sky-600", "text-white");
-    btn.classList.remove("bg-slate-800", "text-slate-300");
-  }
-
+  // Telemetry updates
   window.addEventListener("telemetry-update", (e) => {
     const p = e.detail;
-    hudAlt.textContent = p.altitudeFt.toLocaleString();
-    hudVel.textContent = p.velocityMph;
-    hudAcc.textContent = p.accelG;
-    hudTime.textContent = `T+ ${p.time.toFixed(2)}s`;
-
-    if (p.phase === "powered") {
-      hudFlightPhase.textContent = "Boost Phase (Thrust Powered)";
-      hudFlightPhase.className = "text-xs font-mono font-bold text-amber-400 uppercase";
-      phasePulse.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping";
-    } else if (p.phase === "coast") {
-      hudFlightPhase.textContent = "Coasting to Apogee";
-      hudFlightPhase.className = "text-xs font-mono font-bold text-sky-400 uppercase";
-      phasePulse.className = "w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse";
-    } else if (p.phase === "descent") {
-      if (p.posY <= 0.05) {
-        hudFlightPhase.textContent = "Touchdown / Landed";
-        hudFlightPhase.className = "text-xs font-mono font-bold text-emerald-400 uppercase";
-        phasePulse.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
-      } else {
-        hudFlightPhase.textContent = "Parachute Recovery Descent";
-        hudFlightPhase.className = "text-xs font-mono font-bold text-emerald-400 uppercase";
-        phasePulse.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
-      }
-    }
+    document.getElementById("hud-alt").textContent = p.altitudeFt.toLocaleString();
+    document.getElementById("hud-vel").textContent = p.velocityMph;
+    document.getElementById("hud-acc").textContent = p.accelG;
+    document.getElementById("hud-time").textContent = `T+ ${p.time.toFixed(2)}s`;
   });
 
+  // Camera views
+  document.getElementById("cam-pad").addEventListener("click", () => flightVisualizer.setCameraMode("pad"));
+  document.getElementById("cam-follow").addEventListener("click", () => flightVisualizer.setCameraMode("follow"));
+  document.getElementById("cam-rocket").addEventListener("click", () => flightVisualizer.setCameraMode("rocket"));
+
+  // Live weather sync
+  document.getElementById("btn-fetch-live-weather").addEventListener("click", async () => {
+    const w = await weatherService.fetchLiveWeather(document.getElementById("launch-site-select").value);
+    document.getElementById("weather-wind-speed").value = w.windSpeedMph;
+    document.getElementById("weather-wind-dir").value = w.windDirDeg;
+    document.getElementById("weather-temp").value = w.tempF;
+    document.getElementById("weather-pressure").value = w.pressureMbar;
+    runSimulation();
+  });
+
+  document.getElementById("btn-re-simulate").addEventListener("click", () => runSimulation());
+
   // -------------------------------------------------------------
-  // 6. .ORK IMPORT & EXPORT
+  // 7. FILE IMPORT / EXPORT
   // -------------------------------------------------------------
   orkFileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     try {
-      activeRocketName.textContent = `Loading ${file.name}...`;
       const buffer = await file.arrayBuffer();
       const parsed = await parser.parseOrkFile(buffer);
       activeRocket = parsed;
-      activeRocketName.textContent = parsed.name;
-      recalculateAndRender();
-      switchWorkflowStep(1); // Go straight to designer
+      recalcStability();
+      renderTree();
+      blueprint.setRocket(activeRocket);
+      switchTab("design");
     } catch (err) {
-      alert("Error parsing OpenRocket file: " + err.message);
+      alert("Error parsing .ork file: " + err.message);
     }
   });
 
-  btnQuickSample.addEventListener("click", () => {
-    location.reload();
-  });
-
   btnExportOrk.addEventListener("click", () => {
-    const exportData = {
-      rocket: activeRocket,
-      simulation: currentSimulation ? {
-        apogee: currentSimulation.apogee,
-        maxVelocity: currentSimulation.maxVelocity,
-        optimumDelay: currentSimulation.optimumDelay
-      } : null
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(activeRocket, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${activeRocket.name || "rocket"}-config.json`;
+    a.download = `${activeRocket.name || "rocket"}-design.json`;
     a.click();
     URL.revokeObjectURL(url);
   });
 
-  // Initial Startup
-  initCharts();
-  recalculateAndRender();
-  switchWorkflowStep(1); // Start in Rocket Designer
+  // Initialize
+  recalcStability();
+  renderTree();
+  blueprint.setRocket(activeRocket);
 });
