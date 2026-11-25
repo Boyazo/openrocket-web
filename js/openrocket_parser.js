@@ -1,7 +1,6 @@
 /**
- * Robust OpenRocket XML / .ork Archive Parser
- * Supports nested OpenRocket schemas:
- * Handles multiple <stage> elements, auto-dimensions, nested finsets, and motor configs.
+ * OpenRocket XML / .ork Archive Parser
+ * Standard DOM traversal without fragile CSS selectors.
  */
 
 class OpenRocketParser {
@@ -40,20 +39,50 @@ class OpenRocketParser {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlString, "application/xml");
 
-    const parseError = doc.querySelector("parsererror");
+    const parseError = doc.getElementsByTagName("parsererror")[0];
     if (parseError) {
       throw new Error("Invalid XML in OpenRocket file: " + parseError.textContent);
     }
 
-    const rocketNode = doc.querySelector("rocket");
-    const rocketName = rocketNode?.querySelector("name")?.textContent || "Apogee Zephyr";
+    // Rocket element
+    const rocketNodes = doc.getElementsByTagName("rocket");
+    const rocketNode = rocketNodes.length > 0 ? rocketNodes[0] : doc.documentElement;
+    
+    let rocketName = "Imported Rocket";
+    for (let i = 0; i < rocketNode.childNodes.length; i++) {
+      if (rocketNode.childNodes[i].nodeName === "name") {
+        rocketName = rocketNode.childNodes[i].textContent || rocketName;
+        break;
+      }
+    }
 
-    // In OpenRocket XML, stages can be listed under <motorconfiguration> or <subcomponents>
-    // We want the <stage> that contains actual rocket subcomponents!
-    const allStages = Array.from(doc.querySelectorAll("subcomponents > stage"));
-    let activeStage = allStages.find(s => s.querySelector("nosecone, bodytube")) || allStages[0] || doc.querySelector("stage");
+    // Find the real physical stage (the <stage> that has a <subcomponents> child)
+    const stageNodes = doc.getElementsByTagName("stage");
+    let physicalStage = null;
+    for (let i = 0; i < stageNodes.length; i++) {
+      const s = stageNodes[i];
+      for (let j = 0; j < s.childNodes.length; j++) {
+        if (s.childNodes[j].nodeName === "subcomponents") {
+          physicalStage = s;
+          break;
+        }
+      }
+      if (physicalStage) break;
+    }
 
-    const stageName = activeStage?.querySelector(":scope > name")?.textContent || "Sustainer";
+    if (!physicalStage && stageNodes.length > 0) {
+      physicalStage = stageNodes[0];
+    }
+
+    let stageName = "Sustainer";
+    let stageSubcomponentsNode = null;
+    if (physicalStage) {
+      for (let i = 0; i < physicalStage.childNodes.length; i++) {
+        const cn = physicalStage.childNodes[i];
+        if (cn.nodeName === "name") stageName = cn.textContent || stageName;
+        if (cn.nodeName === "subcomponents") stageSubcomponentsNode = cn;
+      }
+    }
 
     const parseNum = (str, fallback = 0) => {
       if (!str) return fallback;
@@ -62,124 +91,137 @@ class OpenRocketParser {
       return isNaN(val) ? fallback : val;
     };
 
+    const getChildText = (node, tagName, fallback = "") => {
+      for (let i = 0; i < node.childNodes.length; i++) {
+        if (node.childNodes[i].nodeName === tagName) {
+          return node.childNodes[i].textContent || fallback;
+        }
+      }
+      return fallback;
+    };
+
     const components = [];
     let totalLength = 0;
     let maxRadius = 0.0508;
 
-    // Direct children under the active stage's <subcomponents>
-    const stageSubcomps = activeStage ? activeStage.querySelector(":scope > subcomponents") : doc.querySelector("subcomponents");
-    const topLevelNodes = stageSubcomps ? Array.from(stageSubcomps.children) : [];
+    if (stageSubcomponentsNode) {
+      for (let i = 0; i < stageSubcomponentsNode.childNodes.length; i++) {
+        const node = stageSubcomponentsNode.childNodes[i];
+        if (node.nodeType !== 1) continue; // skip text/comment nodes
 
-    topLevelNodes.forEach(node => {
-      const tag = node.tagName.toLowerCase();
-      const compName = node.querySelector(":scope > name")?.textContent || tag;
-      const compId = node.querySelector(":scope > id")?.textContent || `id-${Date.now()}-${Math.random()}`;
+        const tag = node.nodeName.toLowerCase();
+        const compName = getChildText(node, "name", tag);
+        const compId = getChildText(node, "id", `id-${Date.now()}-${Math.random()}`);
 
-      if (tag === "nosecone") {
-        const len = parseNum(node.querySelector("length")?.textContent, 0.503);
-        const rad = parseNum(node.querySelector("aftradius, radius")?.textContent, 0.0508);
-        if (rad > maxRadius) maxRadius = rad;
-        totalLength += len;
+        if (tag === "nosecone") {
+          const len = parseNum(getChildText(node, "length"), 0.503);
+          let rad = parseNum(getChildText(node, "aftradius"), 0);
+          if (!rad) rad = parseNum(getChildText(node, "radius"), 0.0508);
+          if (rad > maxRadius) maxRadius = rad;
+          totalLength += len;
 
-        components.push({
-          id: compId,
-          type: "nosecone",
-          name: compName,
-          length: len,
-          radius: rad,
-          shape: "ogive",
-          color: "white",
-          children: []
-        });
-      } else if (tag === "bodytube") {
-        const len = parseNum(node.querySelector("length")?.textContent, 0.457);
-        const rad = parseNum(node.querySelector("radius")?.textContent, 0.0508);
-        if (rad > maxRadius) maxRadius = rad;
-        totalLength += len;
+          components.push({
+            id: compId,
+            type: "nosecone",
+            name: compName,
+            length: len,
+            radius: rad,
+            shape: getChildText(node, "shape", "ogive"),
+            color: "white",
+            children: []
+          });
+        } else if (tag === "bodytube") {
+          const len = parseNum(getChildText(node, "length"), 0.457);
+          const rad = parseNum(getChildText(node, "radius"), 0.0508);
+          if (rad > maxRadius) maxRadius = rad;
+          totalLength += len;
 
-        // Parse nested subcomponents inside this bodytube
-        const innerSubcompsNode = node.querySelector(":scope > subcomponents");
-        const children = [];
+          // Nested subcomponents
+          const children = [];
+          for (let j = 0; j < node.childNodes.length; j++) {
+            const innerSub = node.childNodes[j];
+            if (innerSub.nodeName === "subcomponents") {
+              for (let k = 0; k < innerSub.childNodes.length; k++) {
+                const childNode = innerSub.childNodes[k];
+                if (childNode.nodeType !== 1) continue;
 
-        if (innerSubcompsNode) {
-          Array.from(innerSubcompsNode.children).forEach(childNode => {
-            const childTag = childNode.tagName.toLowerCase();
-            const childName = childNode.querySelector(":scope > name")?.textContent || childTag;
-            const childId = childNode.querySelector(":scope > id")?.textContent || `child-${Math.random()}`;
+                const childTag = childNode.nodeName.toLowerCase();
+                const childName = getChildText(childNode, "name", childTag);
+                const childId = getChildText(childNode, "id", `child-${Math.random()}`);
 
-            if (childTag === "tubecoupler") {
-              children.push({
-                id: childId,
-                type: "coupler",
-                name: childName,
-                length: parseNum(childNode.querySelector("length")?.textContent, 0.20),
-                radius: parseNum(childNode.querySelector("radius")?.textContent, rad * 0.98)
-              });
-            } else if (childTag === "parachute") {
-              children.push({
-                id: childId,
-                type: "parachute",
-                name: childName,
-                diameter: parseNum(childNode.querySelector("diameter")?.textContent, 1.22)
-              });
-            } else if (childTag.includes("finset") || childTag.includes("fins")) {
-              const rootChord = parseNum(childNode.querySelector("rootchord")?.textContent, 0.22);
-              const tipChord = parseNum(childNode.querySelector("tipchord")?.textContent, 0.09);
-              const span = parseNum(childNode.querySelector("height")?.textContent, 0.125);
-              const sweepLength = parseNum(childNode.querySelector("sweeplength")?.textContent, 0.13);
-              const count = parseInt(childNode.querySelector("fincount")?.textContent || "3", 10);
-
-              children.push({
-                id: childId,
-                type: "fins",
-                name: childName,
-                count,
-                rootChord,
-                tipChord,
-                span,
-                sweepLength
-              });
-            } else if (childTag === "innertube") {
-              children.push({
-                id: childId,
-                type: "innertube",
-                name: childName,
-                length: parseNum(childNode.querySelector("length")?.textContent, 0.279),
-                radius: parseNum(childNode.querySelector("innerradius, radius")?.textContent, 0.019)
-              });
-            } else if (childTag === "centeringring") {
-              children.push({
-                id: childId,
-                type: "ring",
-                name: childName,
-                position: parseNum(childNode.querySelector("position")?.textContent, 0.02)
-              });
-            } else {
-              children.push({
-                id: childId,
-                type: childTag,
-                name: childName
-              });
+                if (childTag === "tubecoupler") {
+                  children.push({
+                    id: childId,
+                    type: "coupler",
+                    name: childName,
+                    length: parseNum(getChildText(childNode, "length"), 0.20),
+                    radius: parseNum(getChildText(childNode, "radius"), rad * 0.98)
+                  });
+                } else if (childTag === "parachute") {
+                  children.push({
+                    id: childId,
+                    type: "parachute",
+                    name: childName,
+                    diameter: parseNum(getChildText(childNode, "diameter"), 1.22)
+                  });
+                } else if (childTag.includes("finset") || childTag.includes("fins")) {
+                  children.push({
+                    id: childId,
+                    type: "fins",
+                    name: childName,
+                    count: parseInt(getChildText(childNode, "fincount", "3"), 10),
+                    rootChord: parseNum(getChildText(childNode, "rootchord"), 0.22),
+                    tipChord: parseNum(getChildText(childNode, "tipchord"), 0.09),
+                    span: parseNum(getChildText(childNode, "height"), 0.125),
+                    sweepLength: parseNum(getChildText(childNode, "sweeplength"), 0.13)
+                  });
+                } else if (childTag === "innertube") {
+                  children.push({
+                    id: childId,
+                    type: "innertube",
+                    name: childName,
+                    length: parseNum(getChildText(childNode, "length"), 0.279),
+                    radius: parseNum(getChildText(childNode, "innerradius") || getChildText(childNode, "radius"), 0.019)
+                  });
+                } else if (childTag === "centeringring") {
+                  children.push({
+                    id: childId,
+                    type: "ring",
+                    name: childName,
+                    position: parseNum(getChildText(childNode, "position"), 0.02)
+                  });
+                } else {
+                  children.push({
+                    id: childId,
+                    type: childTag,
+                    name: childName
+                  });
+                }
+              }
             }
+          }
+
+          components.push({
+            id: compId,
+            type: "bodytube",
+            name: compName,
+            length: len,
+            radius: rad,
+            color: "white",
+            children: children
           });
         }
-
-        components.push({
-          id: compId,
-          type: "bodytube",
-          name: compName,
-          length: len,
-          radius: rad,
-          color: "white",
-          children: children
-        });
       }
-    });
+    }
 
-    // Motor configuration check
-    const motorNode = doc.querySelector("motor");
-    const designation = motorNode?.querySelector("designation")?.textContent || "I280DM";
-    const delay = parseNum(motorNode?.querySelector("delay")?.textContent, 10.0);
+    // Motor check
+    let designation = "I280DM";
+    let delay = 10.0;
+    const motorNodes = doc.getElementsByTagName("motor");
+    if (motorNodes.length > 0) {
+      designation = getChildText(motorNodes[0], "designation", designation);
+      delay = parseNum(getChildText(motorNodes[0], "delay"), delay);
+    }
 
     this.rocket = {
       name: rocketName,

@@ -2,19 +2,18 @@
  * OpenRocket Web Edition Controller
  * Connects OpenRocket CAD Layout:
  *  - Component Tree (Sustainer, Nose cone, Body tubes, Fins, Coupler, Rings)
+ *  - Recursive Deletion (handles deleting child subcomponents inside body tubes!)
  *  - 2D Blueprint Canvas (Centimeter ruler, technical line render, CG/CP markers)
- *  - Component Add/Edit modal dialogs
- *  - Flight Configuration sync & 3D Flight Simulation
+ *  - Synchronizes all design edits directly into 6-DOF simulation & 3D launch world!
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // 1. Services & Renderers
   const parser = new OpenRocketParser();
   const weatherService = new WeatherService();
   const blueprint = new RocketBlueprintRenderer("blueprint-canvas", "ruler-canvas");
   const flightVisualizer = new Rocket3DVisualizer("canvas-container", false);
 
-  // Active Rocket Architecture (Zephyr Default)
+  // Active Rocket Architecture (Default Apogee Zephyr)
   let activeRocket = {
     name: "Apogee Zephyr",
     stage: "Sustainer",
@@ -75,6 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const toolAddCoupler = document.getElementById("tool-add-coupler");
   const toolAddRings = document.getElementById("tool-add-rings");
   const toolAddParachute = document.getElementById("tool-add-parachute");
+  const toolAddMass = document.getElementById("tool-add-mass");
 
   // Blueprint Toolbar
   const selectViewType = document.getElementById("select-view-type");
@@ -139,13 +139,11 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderTree() {
     treeContainer.innerHTML = "";
 
-    // Root Sustainer Node
     const root = document.createElement("div");
     root.className = "flex items-center gap-1 text-slate-800 font-bold px-1 py-0.5";
     root.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-sky-600"></i> <span>${activeRocket.stage || "Sustainer"}</span>`;
     treeContainer.appendChild(root);
 
-    // Components List
     (activeRocket.components || []).forEach((comp) => {
       const item = document.createElement("div");
       const isSelected = selectedComponent === comp;
@@ -175,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       treeContainer.appendChild(item);
 
-      // Render Child sub-components (if any)
+      // Render Child subcomponents
       if (comp.children && comp.children.length > 0) {
         comp.children.forEach(sub => {
           const subItem = document.createElement("div");
@@ -212,7 +210,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // -------------------------------------------------------------
-  // 3. COMPONENT EDIT MODAL (Double Click)
+  // 3. EDIT & DELETE (Supports both Root & Nested Subcomponents!)
   // -------------------------------------------------------------
   function openEditModal(comp) {
     selectedComponent = comp;
@@ -242,26 +240,44 @@ document.addEventListener("DOMContentLoaded", () => {
     recalcStability();
     renderTree();
     blueprint.draw();
+    flightVisualizer.buildRocketModel(activeRocket);
   });
 
   btnTreeEdit.addEventListener("click", () => {
     if (selectedComponent) openEditModal(selectedComponent);
   });
 
+  // RECURSIVE DELETE (Deletes root components OR child items inside bodytubes)
   btnTreeDelete.addEventListener("click", () => {
     if (!selectedComponent) return;
-    const idx = activeRocket.components.indexOf(selectedComponent);
-    if (idx !== -1) {
-      activeRocket.components.splice(idx, 1);
-      selectedComponent = activeRocket.components[0];
-      recalcStability();
-      renderTree();
-      blueprint.draw();
+
+    // Check top level
+    const topIdx = activeRocket.components.indexOf(selectedComponent);
+    if (topIdx !== -1) {
+      activeRocket.components.splice(topIdx, 1);
+      selectedComponent = activeRocket.components[0] || null;
+    } else {
+      // Check inside child subcomponents of body tubes
+      for (const comp of activeRocket.components) {
+        if (comp.children) {
+          const childIdx = comp.children.indexOf(selectedComponent);
+          if (childIdx !== -1) {
+            comp.children.splice(childIdx, 1);
+            selectedComponent = comp;
+            break;
+          }
+        }
+      }
     }
+
+    recalcStability();
+    renderTree();
+    blueprint.draw();
+    flightVisualizer.buildRocketModel(activeRocket);
   });
 
   // -------------------------------------------------------------
-  // 4. ADD NEW COMPONENT BUTTONS
+  // 4. ADD COMPONENTS TOOLBAR
   // -------------------------------------------------------------
   toolAddNose.addEventListener("click", () => {
     activeRocket.components.unshift({
@@ -276,6 +292,7 @@ document.addEventListener("DOMContentLoaded", () => {
     recalcStability();
     renderTree();
     blueprint.draw();
+    flightVisualizer.buildRocketModel(activeRocket);
   });
 
   toolAddBodytube.addEventListener("click", () => {
@@ -291,13 +308,17 @@ document.addEventListener("DOMContentLoaded", () => {
     recalcStability();
     renderTree();
     blueprint.draw();
+    flightVisualizer.buildRocketModel(activeRocket);
   });
 
   toolAddFreeformFins.addEventListener("click", () => {
-    const lastTube = activeRocket.components[activeRocket.components.length - 1];
-    if (lastTube) {
-      if (!lastTube.children) lastTube.children = [];
-      lastTube.children.push({
+    const targetTube = (selectedComponent && selectedComponent.type === "bodytube")
+      ? selectedComponent
+      : activeRocket.components.filter(c => c.type === "bodytube").pop();
+
+    if (targetTube) {
+      if (!targetTube.children) targetTube.children = [];
+      targetTube.children.push({
         id: "fins-" + Date.now(),
         type: "fins",
         name: "Freeform fin set",
@@ -307,28 +328,35 @@ document.addEventListener("DOMContentLoaded", () => {
         tipChord: 0.09,
         sweepLength: 0.13
       });
+      recalcStability();
       renderTree();
       blueprint.draw();
+      flightVisualizer.buildRocketModel(activeRocket);
     }
   });
 
   toolAddParachute.addEventListener("click", () => {
-    const firstTube = activeRocket.components.find(c => c.type === "bodytube");
-    if (firstTube) {
-      if (!firstTube.children) firstTube.children = [];
-      firstTube.children.push({
+    const targetTube = (selectedComponent && selectedComponent.type === "bodytube")
+      ? selectedComponent
+      : activeRocket.components.find(c => c.type === "bodytube");
+
+    if (targetTube) {
+      if (!targetTube.children) targetTube.children = [];
+      targetTube.children.push({
         id: "chute-" + Date.now(),
         type: "parachute",
         name: "Parachute",
         diameter: 1.22
       });
+      recalcStability();
       renderTree();
       blueprint.draw();
+      flightVisualizer.buildRocketModel(activeRocket);
     }
   });
 
   // -------------------------------------------------------------
-  // 5. BLUEPRINT VIEWPORT CONTROLS
+  // 5. BLUEPRINT VIEWPORT & RECALCULATION
   // -------------------------------------------------------------
   btnZoomIn.addEventListener("click", () => {
     blueprint.zoom = Math.min(2.0, blueprint.zoom + 0.15);
@@ -356,6 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
     activeRocket.motor.designation = configMotorSelect.value;
     document.getElementById("info-flight-config").textContent = `Flight configuration: [${configMotorSelect.value}-10]`;
     blueprint.draw();
+    runSimulation();
   });
 
   function recalcStability() {
@@ -384,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // -------------------------------------------------------------
-  // 6. 3D FLIGHT SIMULATION EXECUTION
+  // 6. 3D FLIGHT SIMULATION EXECUTION (Re-simulates dynamically on design change!)
   // -------------------------------------------------------------
   function runSimulation() {
     const env = {
@@ -405,7 +434,8 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("info-apogee").textContent = `${currentSimulation.apogee.meters} m (${currentSimulation.apogee.feet} ft)`;
     document.getElementById("info-max-vel").textContent = `${currentSimulation.maxVelocity.mps} m/s (Mach ${currentSimulation.maxVelocity.mach})`;
 
-    // Load into 3D world
+    // Load trajectory & rebuild 3D rocket
+    flightVisualizer.buildRocketModel(activeRocket);
     flightVisualizer.loadSimulationTrajectory(currentSimulation.trajectory);
 
     // Altitude Chart
@@ -461,7 +491,6 @@ document.addEventListener("DOMContentLoaded", () => {
     lucide.createIcons();
   });
 
-  // Telemetry updates
   window.addEventListener("telemetry-update", (e) => {
     const p = e.detail;
     document.getElementById("hud-alt").textContent = p.altitudeFt.toLocaleString();
@@ -470,12 +499,10 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("hud-time").textContent = `T+ ${p.time.toFixed(2)}s`;
   });
 
-  // Camera views
   document.getElementById("cam-pad").addEventListener("click", () => flightVisualizer.setCameraMode("pad"));
   document.getElementById("cam-follow").addEventListener("click", () => flightVisualizer.setCameraMode("follow"));
   document.getElementById("cam-rocket").addEventListener("click", () => flightVisualizer.setCameraMode("rocket"));
 
-  // Live weather sync
   document.getElementById("btn-fetch-live-weather").addEventListener("click", async () => {
     const w = await weatherService.fetchLiveWeather(document.getElementById("launch-site-select").value);
     document.getElementById("weather-wind-speed").value = w.windSpeedMph;
@@ -488,7 +515,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-re-simulate").addEventListener("click", () => runSimulation());
 
   // -------------------------------------------------------------
-  // 7. FILE IMPORT / EXPORT (Fixed to immediately refresh blueprint & tree)
+  // 7. FILE IMPORT / EXPORT (Completely wired!)
   // -------------------------------------------------------------
   orkFileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -520,8 +547,9 @@ document.addEventListener("DOMContentLoaded", () => {
     URL.revokeObjectURL(url);
   });
 
-  // Initialize
+  // Startup initialization
   recalcStability();
   renderTree();
   blueprint.setRocket(activeRocket);
+  flightVisualizer.buildRocketModel(activeRocket);
 });
