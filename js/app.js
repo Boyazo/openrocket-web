@@ -383,10 +383,14 @@ document.addEventListener("DOMContentLoaded", () => {
     blueprint.draw();
   });
 
-  // Populate Motor Selection Dropdown with all available motors
+  const configTableMotor = document.getElementById("config-table-motor");
+  const configTableDelay = document.getElementById("config-table-delay");
+
+  // Populate Motor Selection Dropdowns (both in Blueprint toolbar and Motors & Config tab)
   function populateMotorDropdown(selectedCode) {
-    if (!configMotorSelect) return;
-    configMotorSelect.innerHTML = "";
+    const dropdowns = [configMotorSelect, configTableMotor].filter(Boolean);
+    if (dropdowns.length === 0) return;
+
     const allMotors = motorDb.getAllMotors();
 
     // Group motors by impulse class
@@ -397,43 +401,69 @@ document.addEventListener("DOMContentLoaded", () => {
       classes[cls].push(m);
     });
 
-    Object.keys(classes).sort().forEach(cls => {
-      const optgroup = document.createElement("optgroup");
-      optgroup.label = `Class ${cls} Motors`;
-      classes[cls].forEach(m => {
-        const opt = document.createElement("option");
-        opt.value = m.code;
-        const delayStr = m.defaultDelay ? `-${m.defaultDelay}` : "";
-        opt.textContent = `[${m.code}${delayStr}] (${m.manufacturer || 'Motor'}) - ${m.avgThrust}N avg`;
-        if (selectedCode && (m.code === selectedCode || m.code.toUpperCase() === selectedCode.toUpperCase())) {
-          opt.selected = true;
-        }
-        optgroup.appendChild(opt);
+    dropdowns.forEach(dd => {
+      dd.innerHTML = "";
+
+      Object.keys(classes).sort().forEach(cls => {
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = `Class ${cls} Motors`;
+        classes[cls].forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m.code;
+          const diaMm = Math.round((m.diameter || 0.038) * 1000);
+          const delayStr = m.defaultDelay ? `-${m.defaultDelay}` : "";
+          opt.textContent = `${m.manufacturer || 'Aerotech'} ${m.code}${delayStr} (${m.avgThrust}N avg / ${diaMm}mm)`;
+          if (selectedCode && (m.code === selectedCode || m.code.toUpperCase() === selectedCode.toUpperCase())) {
+            opt.selected = true;
+          }
+          optgroup.appendChild(opt);
+        });
+        dd.appendChild(optgroup);
       });
-      configMotorSelect.appendChild(optgroup);
+
+      // If selected code is not in predefined list, add it dynamically
+      if (selectedCode && !allMotors.some(m => m.code === selectedCode || m.code.toUpperCase() === selectedCode.toUpperCase())) {
+        const customOpt = document.createElement("option");
+        customOpt.value = selectedCode;
+        customOpt.textContent = `${activeRocket.motor?.manufacturer || 'Imported'} ${selectedCode} (Active Imported Motor)`;
+        customOpt.selected = true;
+        dd.insertBefore(customOpt, dd.firstChild);
+      }
+
+      if (selectedCode) {
+        dd.value = selectedCode;
+      }
     });
 
-    // If selected code is not in list, add it dynamically
-    if (selectedCode && !allMotors.some(m => m.code === selectedCode)) {
-      const customOpt = document.createElement("option");
-      customOpt.value = selectedCode;
-      customOpt.textContent = `[${selectedCode}] (Imported Motor)`;
-      customOpt.selected = true;
-      configMotorSelect.insertBefore(customOpt, configMotorSelect.firstChild);
-    }
-
-    if (selectedCode) {
-      configMotorSelect.value = selectedCode;
+    if (configTableDelay && activeRocket.motor?.delay) {
+      configTableDelay.value = activeRocket.motor.delay;
     }
   }
 
   populateMotorDropdown(activeRocket.motor?.designation || "I280DM");
 
-  configMotorSelect?.addEventListener("change", () => {
-    activeRocket.motor.designation = configMotorSelect.value;
+  function onMotorChanged(newMotorCode) {
+    activeRocket.motor.designation = newMotorCode;
+    if (configMotorSelect) configMotorSelect.value = newMotorCode;
+    if (configTableMotor) configTableMotor.value = newMotorCode;
+
+    const delayVal = configTableDelay ? parseFloat(configTableDelay.value) || 10 : 10;
+    activeRocket.motor.delay = delayVal;
+
     const infoFlight = document.getElementById("info-flight-config");
-    if (infoFlight) infoFlight.textContent = `Flight configuration: [${configMotorSelect.value}-${activeRocket.motor?.delay || 10}]`;
+    if (infoFlight) infoFlight.textContent = `Flight configuration: [${newMotorCode}-${delayVal}]`;
+
+    // Recalculate and update simulations
     blueprint.draw();
+    runSimulation();
+  }
+
+  configMotorSelect?.addEventListener("change", () => onMotorChanged(configMotorSelect.value));
+  configTableMotor?.addEventListener("change", () => onMotorChanged(configTableMotor.value));
+  configTableDelay?.addEventListener("input", () => {
+    activeRocket.motor.delay = parseFloat(configTableDelay.value) || 10;
+    const infoFlight = document.getElementById("info-flight-config");
+    if (infoFlight) infoFlight.textContent = `Flight configuration: [${activeRocket.motor.designation}-${activeRocket.motor.delay}]`;
     runSimulation();
   });
 
